@@ -1,0 +1,103 @@
+name: Validate and deploy RN-Admin to web4
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web4-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  deploy:
+    needs: validate
+    if: vars.WEB4_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_PATH: /home/ubuntu/fy/service
+      WEB4_HOST: ${{ secrets.WEB4_HOST }}
+      WEB4_USER: ${{ secrets.WEB4_USER }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          WEB4_SSH_KEY: ${{ secrets.WEB4_SSH_KEY }}
+          WEB4_KNOWN_HOSTS: ${{ secrets.WEB4_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$WEB4_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$WEB4_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Upload isolated staging source
+        run: |
+          staging="$DEPLOY_PATH/.incoming-rn-admin-$GITHUB_SHA"
+          ssh "$WEB4_USER@$WEB4_HOST" "mkdir -p '$staging'"
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.env.local' \
+            --exclude 'node_modules/' \
+            --exclude 'dist/' \
+            ./ "$WEB4_USER@$WEB4_HOST:$staging/"
+      - name: Deploy with lock, health gate and rollback
+        run: |
+          staging="$DEPLOY_PATH/.incoming-rn-admin-$GITHUB_SHA"
+          ssh "$WEB4_USER@$WEB4_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' STAGING='$staging' bash -s" <<'REMOTE'
+          set -eu
+          [ "$DEPLOY_PATH" = "/home/ubuntu/fy/service" ]
+          case "$STAGING" in
+            "$DEPLOY_PATH"/.incoming-rn-admin-*) ;;
+            *) exit 2 ;;
+          esac
+          cd "$DEPLOY_PATH"
+          test -f .env
+          test -f compose.yaml
+          test -d "$STAGING"
+          exec 9>"$DEPLOY_PATH/.deploy.lock"
+          flock -w 300 9
+          backup="$DEPLOY_PATH/.rollback-rn-admin-$(date +%s)"
+          if [ -d rn-admin ]; then mv rn-admin "$backup"; fi
+          mv "$STAGING" rn-admin
+          if docker compose --env-file .env -f compose.yaml up -d --build --no-deps admin; then
+            healthy=false
+            for _ in $(seq 1 30); do
+              if [ "$(docker inspect -f '{{.State.Health.Status}}' rn-foundation-admin 2>/dev/null || true)" = healthy ]; then
+                healthy=true
+                break
+              fi
+              sleep 2
+            done
+            if [ "$healthy" = true ]; then
+              if [ -d "$backup" ]; then rm -rf "$backup"; fi
+              exit 0
+            fi
+          fi
+          failed="${STAGING/.incoming-rn-admin-/.failed-rn-admin-}"
+          mv rn-admin "$failed"
+          if [ -d "$backup" ]; then
+            mv "$backup" rn-admin
+            docker compose --env-file .env -f compose.yaml up -d --build --no-deps admin
+          fi
+          rm -rf "$failed"
+          exit 1
+          REMOTE
