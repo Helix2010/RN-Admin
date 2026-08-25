@@ -3,13 +3,13 @@ import * as React from "react";
 import {
   Activity,
   ArrowUpRight,
-  Check,
   CirclePause,
   CloudUpload,
+  FileArchive,
   RotateCcw,
   ShieldCheck,
 } from "lucide-react";
-import { adminApi } from "../../core/api";
+import { adminApi, uploadArtifactFile } from "../../core/api";
 import {
   Button,
   Card,
@@ -30,8 +30,10 @@ const actionLabels: Record<string, string> = {
   rollback: "回滚",
 };
 
-export function DashboardPage({ onNavigate }: AdminPageProps) {
-  const query = useAdminQuery(["overview"], adminApi.overview);
+export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
+  const query = useAdminQuery(["overview", tenantId], () =>
+    adminApi.overview(tenantId),
+  );
   if (query.isLoading)
     return (
       <EmptyState
@@ -156,49 +158,88 @@ export function DashboardPage({ onNavigate }: AdminPageProps) {
   );
 }
 
-export function ReleasesPage() {
+export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
   const queryClient = useQueryClient();
-  const query = useAdminQuery(["releases"], adminApi.releases);
-  const [busy, setBusy] = useStateAction();
+  const query = useAdminQuery(["releases", tenantId], () =>
+    adminApi.releases(tenantId),
+  );
   const [showCreate, setShowCreate] = React.useState(false);
-  const [version, setVersion] = React.useState("1.2.0");
-  const [buildNumber, setBuildNumber] = React.useState("120");
+  const applicationsQuery = useAdminQuery(["applications", tenantId], () =>
+    adminApi.applications(tenantId),
+  );
+  const storageQuery = useAdminQuery(["storage-config", tenantId], () =>
+    adminApi.storageConfig(tenantId),
+  );
+  const [applicationId, setApplicationId] = React.useState("");
+  const [file, setFile] = React.useState<File | null>(null);
+  const [runtimeVersion, setRuntimeVersion] = React.useState("expo:57.0.15");
+  const [releaseNotes, setReleaseNotes] =
+    React.useState("修复已知问题并优化体验");
   const [percentage, setPercentage] = React.useState("10");
+  const [uploadProgress, setUploadProgress] = React.useState(0);
+  const [uploadStage, setUploadStage] = React.useState("");
   const [pendingAction, setPendingAction] = React.useState<{
     id: string;
     action: string;
   } | null>(null);
   const [actionReason, setActionReason] = React.useState("");
+  React.useEffect(() => {
+    if (!applicationId && applicationsQuery.data?.items[0]) {
+      setApplicationId(applicationsQuery.data.items[0].id);
+    }
+  }, [applicationId, applicationsQuery.data]);
   const createMutation = useMutation({
-    mutationFn: () =>
-      adminApi.createRelease({
-        applicationId: "dex-mobile",
+    mutationFn: async () => {
+      if (!file) throw new Error("请选择 APK 文件");
+      if (!applicationId) throw new Error("请先配置 Android 应用");
+      setUploadStage("正在申请安全上传地址");
+      setUploadProgress(0);
+      const ticket = await adminApi.createArtifactUpload(tenantId, {
+        applicationId,
+        fileName: file.name,
+        contentType: file.type || "application/vnd.android.package-archive",
+        size: file.size,
+      });
+      setUploadStage("正在直传对象存储");
+      await uploadArtifactFile(ticket.upload, file, setUploadProgress);
+      setUploadStage("服务端正在校验包身份与签名");
+      const finalized = await adminApi.finalizeArtifact(
+        tenantId,
+        ticket.artifact.id,
+      );
+      const artifact = finalized.artifact;
+      if (!artifact.versionName || !artifact.versionCode) {
+        throw new Error("服务端未返回完整 APK 版本信息");
+      }
+      setUploadStage("正在创建发布记录");
+      return adminApi.createRelease(tenantId, {
+        applicationId,
         platform: "android",
-        version,
-        buildNumber: Number(buildNumber),
-        runtimeVersion: "expo:57.0.15",
+        version: artifact.versionName,
+        buildNumber: artifact.versionCode,
+        runtimeVersion,
         channel: "direct",
-        releaseNotes: ["通过管理端创建"],
-        artifact: {
-          id: `artifact-${buildNumber}`,
-          fileName: `dex-mobile-${version}-${buildNumber}.apk`,
-          downloadUrl: "https://downloads.example.com/pending.apk",
-          size: 0,
-          sha256: "pending-sha256",
-          signingFingerprint: null,
-          minOsVersion: "8.0",
-        },
+        releaseNotes: releaseNotes
+          .split("\n")
+          .map((item) => item.trim())
+          .filter(Boolean),
+        artifactId: artifact.id,
         rollout: {
           percentage: Number(percentage),
           audience: "internal",
           startsAt: null,
           stopRule: null,
         },
-      }),
+      });
+    },
     onSuccess: () => {
       setShowCreate(false);
-      void queryClient.invalidateQueries({ queryKey: ["releases"] });
-      void queryClient.invalidateQueries({ queryKey: ["overview"] });
+      setFile(null);
+      setUploadProgress(0);
+      setUploadStage("");
+      void queryClient.invalidateQueries({ queryKey: ["releases", tenantId] });
+      void queryClient.invalidateQueries({ queryKey: ["overview", tenantId] });
+      void queryClient.invalidateQueries({ queryKey: ["artifacts", tenantId] });
     },
   });
   const mutation = useMutation({
@@ -210,12 +251,12 @@ export function ReleasesPage() {
       id: string;
       action: string;
       reason: string;
-    }) => adminApi.action(id, action, reason),
+    }) => adminApi.action(tenantId, id, action, reason),
     onSuccess: () => {
       setPendingAction(null);
       setActionReason("");
-      void queryClient.invalidateQueries({ queryKey: ["releases"] });
-      void queryClient.invalidateQueries({ queryKey: ["overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["releases", tenantId] });
+      void queryClient.invalidateQueries({ queryKey: ["overview", tenantId] });
     },
   });
   if (query.isLoading) return <EmptyState title="正在加载发布列表" />;
@@ -236,11 +277,7 @@ export function ReleasesPage() {
     const label = actionLabels[pendingAction.action] ?? pendingAction.action;
     if (reason.length < 3) return;
     if (!window.confirm(`确认${label}？操作原因将写入审计日志。`)) return;
-    setBusy(`${pendingAction.id}:${pendingAction.action}`);
-    mutation.mutate(
-      { ...pendingAction, reason },
-      { onSettled: () => setBusy(null) },
-    );
+    mutation.mutate({ ...pendingAction, reason });
   };
   return (
     <>
@@ -264,38 +301,122 @@ export function ReleasesPage() {
             </Button>
           </div>
           <div className="card-body">
-            <div className="toolbar">
-              <label>
-                版本{" "}
-                <input
-                  className="input"
-                  value={version}
-                  onChange={(event) => setVersion(event.target.value)}
-                />
-              </label>
-              <label>
-                Build{" "}
-                <input
-                  className="input"
-                  value={buildNumber}
-                  onChange={(event) => setBuildNumber(event.target.value)}
-                />
-              </label>
-              <label>
-                灰度 %{" "}
-                <input
-                  className="input"
-                  value={percentage}
-                  onChange={(event) => setPercentage(event.target.value)}
-                />
-              </label>
-              <Button
-                disabled={createMutation.isPending}
-                onClick={() => createMutation.mutate()}
-              >
-                提交草稿
-              </Button>
-            </div>
+            {!storageQuery.data?.configured ||
+            (applicationsQuery.data?.items.length ?? 0) === 0 ? (
+              <div className="prerequisite-panel">
+                <ShieldCheck size={20} />
+                <div>
+                  <strong>发布前还需要完成租户分发配置</strong>
+                  <p>
+                    {!storageQuery.data?.configured
+                      ? "请先配置并测试 S3 兼容对象存储。"
+                      : "请先登记 Android packageName 与签名证书 SHA-256。"}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={() => onNavigate("distribution")}
+                >
+                  前往配置
+                </Button>
+              </div>
+            ) : (
+              <div className="release-upload-grid">
+                <label className="form-field">
+                  <span>Android 应用</span>
+                  <select
+                    className="select"
+                    value={applicationId}
+                    onChange={(event) => setApplicationId(event.target.value)}
+                    disabled={createMutation.isPending}
+                  >
+                    {applicationsQuery.data?.items.map((application) => (
+                      <option value={application.id} key={application.id}>
+                        {application.name} · {application.packageName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>APK 安装包</span>
+                  <input
+                    className="input file-input"
+                    type="file"
+                    accept=".apk,application/vnd.android.package-archive"
+                    disabled={createMutation.isPending}
+                    onChange={(event) =>
+                      setFile(event.target.files?.[0] ?? null)
+                    }
+                  />
+                  <small>最大尺寸由服务端控制；版本号与签名均从 APK 读取</small>
+                </label>
+                <label className="form-field">
+                  <span>Runtime Version</span>
+                  <input
+                    className="input"
+                    value={runtimeVersion}
+                    disabled={createMutation.isPending}
+                    onChange={(event) => setRuntimeVersion(event.target.value)}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>首批灰度比例</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={percentage}
+                    disabled={createMutation.isPending}
+                    onChange={(event) => setPercentage(event.target.value)}
+                  />
+                </label>
+                <label className="form-field release-notes-field">
+                  <span>发布说明（每行一条）</span>
+                  <textarea
+                    className="input textarea"
+                    value={releaseNotes}
+                    disabled={createMutation.isPending}
+                    onChange={(event) => setReleaseNotes(event.target.value)}
+                  />
+                </label>
+                <div className="upload-summary">
+                  <FileArchive size={22} />
+                  <div>
+                    <strong>{file?.name ?? "尚未选择 APK"}</strong>
+                    <p>
+                      {file
+                        ? formatBytes(file.size)
+                        : "文件将直接上传到租户对象存储"}
+                    </p>
+                  </div>
+                  <Button
+                    disabled={
+                      createMutation.isPending ||
+                      !file ||
+                      !applicationId ||
+                      Number(percentage) < 1 ||
+                      Number(percentage) > 100
+                    }
+                    onClick={() => createMutation.mutate()}
+                  >
+                    <CloudUpload size={16} />
+                    上传、校验并创建发布
+                  </Button>
+                </div>
+                {createMutation.isPending && (
+                  <div className="upload-progress-panel">
+                    <div>
+                      <span>{uploadStage}</span>
+                      <strong>{uploadProgress}%</strong>
+                    </div>
+                    <div className="progress">
+                      <span style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {createMutation.isError && (
               <div className="error-banner" style={{ marginTop: 15 }}>
                 创建失败：{createMutation.error.message}
@@ -423,14 +544,7 @@ export function ReleasesPage() {
                   <td>
                     <div className="toolbar">
                       {release.status === "uploaded" && (
-                        <Button
-                          variant="ghost"
-                          disabled={busy !== null}
-                          onClick={() => runAction(release.id, "verify")}
-                        >
-                          <Check size={14} />
-                          校验
-                        </Button>
+                        <span className="muted">需重新上传真实 APK</span>
                       )}
                       {release.status === "verified" && (
                         <Button
@@ -479,7 +593,7 @@ export function ReleasesPage() {
   );
 }
 
-function useStateAction(): [string | null, (value: string | null) => void] {
-  const [value, setValue] = React.useState<string | null>(null);
-  return [value, setValue];
+function formatBytes(value: number): string {
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }

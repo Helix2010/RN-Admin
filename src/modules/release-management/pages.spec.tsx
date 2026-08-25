@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReleasesPage } from "./pages";
@@ -10,10 +10,16 @@ const apiMocks = vi.hoisted(() => ({
   releases: vi.fn(),
   action: vi.fn(),
   createRelease: vi.fn(),
+  applications: vi.fn(),
+  storageConfig: vi.fn(),
+  createArtifactUpload: vi.fn(),
+  finalizeArtifact: vi.fn(),
+  uploadArtifactFile: vi.fn(),
 }));
 
 vi.mock("../../core/api", () => ({
   adminApi: apiMocks,
+  uploadArtifactFile: apiMocks.uploadArtifactFile,
 }));
 
 afterEach(() => {
@@ -33,7 +39,7 @@ describe("ReleasesPage actions", () => {
           buildNumber: 120,
           runtimeVersion: "expo:57.0.15",
           channel: "direct",
-          status: "uploaded",
+          status: "verified",
           releaseNotes: [],
           artifact: null,
           rollout: {
@@ -52,6 +58,8 @@ describe("ReleasesPage actions", () => {
       hasMore: false,
     });
     apiMocks.action.mockResolvedValue({ release: { id: "release-1" } });
+    apiMocks.applications.mockResolvedValue({ items: [] });
+    apiMocks.storageConfig.mockResolvedValue({ configured: false });
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     const queryClient = new QueryClient({
@@ -60,21 +68,115 @@ describe("ReleasesPage actions", () => {
     const user = userEvent.setup();
     render(
       <QueryClientProvider client={queryClient}>
-        <ReleasesPage />
+        <ReleasesPage
+          tenantId="tenant-a"
+          tenantName="Tenant A"
+          onNavigate={vi.fn()}
+        />
       </QueryClientProvider>,
     );
 
-    await user.click(await screen.findByRole("button", { name: "校验" }));
+    await user.click(await screen.findByRole("button", { name: "预发布" }));
     await user.type(
       screen.getByRole("textbox", { name: "操作原因" }),
-      "确认安装包元数据完整",
+      "确认安装包签名和安装测试完成",
     );
-    await user.click(screen.getByRole("button", { name: "确认校验" }));
+    await user.click(screen.getByRole("button", { name: "确认预发布" }));
 
     expect(apiMocks.action).toHaveBeenCalledWith(
+      "tenant-a",
       "release-1",
-      "verify",
-      "确认安装包元数据完整",
+      "stage",
+      "确认安装包签名和安装测试完成",
+    );
+  });
+
+  it("uploads and finalizes a real artifact before creating the release", async () => {
+    apiMocks.releases.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+    });
+    apiMocks.applications.mockResolvedValue({
+      items: [
+        {
+          id: "dex-mobile",
+          name: "DEX Mobile",
+          platform: "android",
+          packageName: "com.example.dex",
+          expectedSignerSha256: "a".repeat(64),
+          createdAt: "2026-08-25T00:00:00Z",
+          updatedAt: "2026-08-25T00:00:00Z",
+        },
+      ],
+    });
+    apiMocks.storageConfig.mockResolvedValue({
+      configured: true,
+      version: 1,
+      credentialsConfigured: true,
+      sessionTokenConfigured: false,
+    });
+    apiMocks.createArtifactUpload.mockResolvedValue({
+      artifact: { id: "artifact-1" },
+      upload: {
+        method: "PUT",
+        url: "https://storage.example/upload",
+        headers: { "content-type": "application/vnd.android.package-archive" },
+        expiresAt: "2026-08-25T00:15:00Z",
+      },
+    });
+    apiMocks.uploadArtifactFile.mockResolvedValue(undefined);
+    apiMocks.finalizeArtifact.mockResolvedValue({
+      artifact: {
+        id: "artifact-1",
+        versionName: "1.3.0",
+        versionCode: 130,
+      },
+    });
+    apiMocks.createRelease.mockResolvedValue({ release: { id: "release-1" } });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ReleasesPage
+          tenantId="tenant-a"
+          tenantName="Tenant A"
+          onNavigate={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "创建发布" }));
+    const apk = new File(["signed-apk"], "dex-1.3.0.apk", {
+      type: "application/vnd.android.package-archive",
+    });
+    await user.upload(screen.getByLabelText(/APK 安装包/), apk);
+    await user.click(
+      screen.getByRole("button", { name: "上传、校验并创建发布" }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.createRelease).toHaveBeenCalledWith(
+        "tenant-a",
+        expect.objectContaining({
+          applicationId: "dex-mobile",
+          version: "1.3.0",
+          buildNumber: 130,
+          artifactId: "artifact-1",
+        }),
+      );
+    });
+    expect(apiMocks.uploadArtifactFile).toHaveBeenCalledWith(
+      expect.objectContaining({ method: "PUT" }),
+      apk,
+      expect.any(Function),
+    );
+    expect(apiMocks.finalizeArtifact).toHaveBeenCalledWith(
+      "tenant-a",
+      "artifact-1",
     );
   });
 });

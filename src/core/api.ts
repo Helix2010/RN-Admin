@@ -31,6 +31,7 @@ const releaseSchema = z.object({
   updatedAt: z.string(),
   activatedAt: z.string().nullable(),
   lastAction: z.string().nullable(),
+  artifactId: z.string().nullable().optional(),
 });
 export type Release = z.infer<typeof releaseSchema>;
 const listSchema = z.object({
@@ -143,6 +144,7 @@ const auditSchema = z.object({
   requestId: z.string(),
   createdAt: z.string(),
   summary: z.record(z.string(), z.union([z.string(), z.number(), z.null()])),
+  tenantId: z.string(),
 });
 export type AuditEvent = z.infer<typeof auditSchema>;
 
@@ -158,6 +160,81 @@ const sessionSchema = z.object({
   method: z.enum(["session", "api-key"]),
 });
 export type AdminSession = z.infer<typeof sessionSchema>;
+
+const tenantSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  name: z.string(),
+  status: z.enum(["active", "disabled"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Tenant = z.infer<typeof tenantSchema>;
+
+const applicationSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  platform: z.literal("android"),
+  packageName: z.string(),
+  expectedSignerSha256: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ManagedApplication = z.infer<typeof applicationSchema>;
+
+const storageConfigSchema = z.object({
+  configured: z.boolean(),
+  version: z.number().int().nonnegative(),
+  provider: z.enum(["s3", "r2", "minio"]).optional(),
+  endpoint: z.string().nullable().optional(),
+  region: z.string().optional(),
+  bucket: z.string().optional(),
+  objectPrefix: z.string().optional(),
+  forcePathStyle: z.boolean().optional(),
+  publicBaseUrl: z.string().nullable().optional(),
+  accessKeyHint: z.string().nullable().optional(),
+  credentialsConfigured: z.boolean(),
+  sessionTokenConfigured: z.boolean(),
+  updatedBy: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+export type StorageConfig = z.infer<typeof storageConfigSchema>;
+
+const artifactSchema = z.object({
+  id: z.string(),
+  applicationId: z.string(),
+  fileName: z.string(),
+  contentType: z.string(),
+  expectedSize: z.number(),
+  size: z.number().nullable(),
+  sha256: z.string().nullable(),
+  packageName: z.string().nullable(),
+  versionName: z.string().nullable(),
+  versionCode: z.number().nullable(),
+  minSdk: z.number().nullable(),
+  minOsVersion: z.string(),
+  signerSha256: z.string().nullable(),
+  signingFingerprint: z.string().nullable(),
+  signingScheme: z.number().nullable(),
+  status: z.enum(["pending", "uploaded", "verified", "rejected"]),
+  rejectionReason: z.string().nullable(),
+  verifiedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  downloadUrl: z.string().nullable(),
+});
+export type Artifact = z.infer<typeof artifactSchema>;
+
+const uploadTicketSchema = z.object({
+  artifact: artifactSchema,
+  upload: z.object({
+    method: z.literal("PUT"),
+    url: z.string(),
+    headers: z.record(z.string(), z.string()),
+    expiresAt: z.string(),
+  }),
+});
+export type UploadTicket = z.infer<typeof uploadTicketSchema>;
 
 export class ApiError extends Error {
   constructor(
@@ -215,20 +292,35 @@ export const authApi = {
 };
 
 export const adminApi = {
-  overview: () => request("/v1/admin/overview", overviewSchema),
-  releases: () => request("/v1/admin/releases", listSchema),
-  createRelease: (payload: unknown) =>
-    request("/v1/admin/releases", z.object({ release: releaseSchema }), {
+  tenants: () =>
+    request("/v1/admin/tenants", z.object({ items: z.array(tenantSchema) })),
+  createTenant: (payload: unknown) =>
+    request("/v1/admin/tenants", z.object({ tenant: tenantSchema }), {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  config: () => request("/v1/admin/app-config", configViewSchema),
+  overview: (tenantId: string) =>
+    request(tenantPath(tenantId, "/overview"), overviewSchema),
+  releases: (tenantId: string) =>
+    request(tenantPath(tenantId, "/releases"), listSchema),
+  createRelease: (tenantId: string, payload: unknown) =>
+    request(
+      tenantPath(tenantId, "/releases"),
+      z.object({ release: releaseSchema }),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
+  config: (tenantId: string) =>
+    request(tenantPath(tenantId, "/app-config"), configViewSchema),
   saveConfig: (
+    tenantId: string,
     config: ManagedAppConfig,
     expectedVersion: number,
     reason: string,
   ) =>
-    request("/v1/admin/app-config", configSaveSchema, {
+    request(tenantPath(tenantId, "/app-config"), configSaveSchema, {
       method: "PATCH",
       body: JSON.stringify({
         config,
@@ -237,19 +329,124 @@ export const adminApi = {
         confirm: true,
       }),
     }),
-  audits: () =>
+  audits: (tenantId: string) =>
     request(
-      "/v1/admin/audit-events",
+      tenantPath(tenantId, "/audit-events"),
       z.object({
         items: z.array(auditSchema),
         nextCursor: z.string().nullable(),
         hasMore: z.boolean(),
       }),
     ),
-  action: (id: string, action: string, reason: string) =>
+  action: (tenantId: string, id: string, action: string, reason: string) =>
     request(
-      `/v1/admin/releases/${id}/${action}`,
+      tenantPath(tenantId, `/releases/${encodeURIComponent(id)}/${action}`),
       z.object({ release: releaseSchema }),
       { method: "POST", body: JSON.stringify({ reason, confirm: true }) },
     ),
+  applications: (tenantId: string) =>
+    request(
+      tenantPath(tenantId, "/applications"),
+      z.object({ items: z.array(applicationSchema) }),
+    ),
+  createApplication: (tenantId: string, payload: unknown) =>
+    request(
+      tenantPath(tenantId, "/applications"),
+      z.object({ application: applicationSchema }),
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  updateApplication: (
+    tenantId: string,
+    applicationId: string,
+    payload: unknown,
+  ) =>
+    request(
+      tenantPath(
+        tenantId,
+        `/applications/${encodeURIComponent(applicationId)}`,
+      ),
+      z.object({ application: applicationSchema }),
+      { method: "PUT", body: JSON.stringify(payload) },
+    ),
+  storageConfig: (tenantId: string) =>
+    request(tenantPath(tenantId, "/storage-config"), storageConfigSchema),
+  saveStorageConfig: (tenantId: string, payload: unknown) =>
+    request(tenantPath(tenantId, "/storage-config"), storageConfigSchema, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  testStorageConfig: (tenantId: string) =>
+    request(
+      tenantPath(tenantId, "/storage-config/test"),
+      z.object({
+        ok: z.literal(true),
+        provider: z.string(),
+        bucket: z.string(),
+        checkedAt: z.string(),
+      }),
+      { method: "POST", body: "{}" },
+    ),
+  artifacts: (tenantId: string) =>
+    request(
+      tenantPath(tenantId, "/artifacts"),
+      z.object({ items: z.array(artifactSchema) }),
+    ),
+  createArtifactUpload: (
+    tenantId: string,
+    payload: {
+      applicationId: string;
+      fileName: string;
+      contentType: string;
+      size: number;
+    },
+  ) =>
+    request(tenantPath(tenantId, "/artifacts/uploads"), uploadTicketSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  finalizeArtifact: (tenantId: string, artifactId: string) =>
+    request(
+      tenantPath(
+        tenantId,
+        `/artifacts/${encodeURIComponent(artifactId)}/finalize`,
+      ),
+      z.object({ artifact: artifactSchema }),
+      { method: "POST", body: "{}" },
+    ),
 };
+
+function tenantPath(tenantId: string, suffix: string): string {
+  return `/v1/admin/tenants/${encodeURIComponent(tenantId)}${suffix}`;
+}
+
+export function uploadArtifactFile(
+  ticket: UploadTicket["upload"],
+  file: File,
+  onProgress: (percentage: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(ticket.method, ticket.url);
+    for (const [key, value] of Object.entries(ticket.headers)) {
+      xhr.setRequestHeader(key, value);
+    }
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(100);
+        resolve();
+      } else {
+        reject(new ApiError(`对象存储上传失败 (${xhr.status})`, xhr.status));
+      }
+    });
+    xhr.addEventListener("error", () =>
+      reject(new ApiError("无法连接对象存储", 0)),
+    );
+    xhr.addEventListener("abort", () => reject(new ApiError("上传已取消", 0)));
+    xhr.send(file);
+  });
+}

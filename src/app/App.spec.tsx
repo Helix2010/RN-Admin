@@ -13,6 +13,10 @@ const apiMocks = vi.hoisted(() => ({
   releases: vi.fn(),
   config: vi.fn(),
   audits: vi.fn(),
+  tenants: vi.fn(),
+  applications: vi.fn(),
+  storageConfig: vi.fn(),
+  artifacts: vi.fn(),
 }));
 
 vi.mock("../core/api", () => ({
@@ -33,6 +37,10 @@ vi.mock("../core/api", () => ({
     releases: apiMocks.releases,
     config: apiMocks.config,
     audits: apiMocks.audits,
+    tenants: apiMocks.tenants,
+    applications: apiMocks.applications,
+    storageConfig: apiMocks.storageConfig,
+    artifacts: apiMocks.artifacts,
   },
 }));
 
@@ -51,6 +59,18 @@ describe("App sidebar actions", () => {
       method: "session",
     });
     apiMocks.logout.mockResolvedValue({ authenticated: false });
+    apiMocks.tenants.mockResolvedValue({
+      items: [
+        {
+          id: "tenant-default",
+          slug: "default",
+          name: "Default tenant",
+          status: "active",
+          createdAt: "2026-08-25T00:00:00Z",
+          updatedAt: "2026-08-25T00:00:00Z",
+        },
+      ],
+    });
     apiMocks.overview.mockReturnValue(new Promise(() => undefined));
 
     const queryClient = new QueryClient({

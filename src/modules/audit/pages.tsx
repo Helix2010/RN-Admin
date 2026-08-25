@@ -2,9 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { ScrollText } from "lucide-react";
 import { adminApi } from "../../core/api";
 import { Card, EmptyState, StatusPill } from "../../design-system/components";
+import type { AdminPageProps } from "../../plugin-system/types";
 
-export function AuditPage() {
-  const query = useQuery({ queryKey: ["audits"], queryFn: adminApi.audits });
+export function AuditPage({ tenantId }: AdminPageProps) {
+  const query = useQuery({
+    queryKey: ["audits", tenantId],
+    queryFn: () => adminApi.audits(tenantId),
+  });
   if (query.isLoading) return <EmptyState title="正在加载审计日志" />;
   if (query.isError)
     return (

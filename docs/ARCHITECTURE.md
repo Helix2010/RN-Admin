@@ -27,4 +27,4 @@ App Shell (导航、登录态、权限、通知)
 4. 添加权限声明和 API contract/E2E；
 5. 不从其他插件深层导入，跨插件能力上移到 core/design-system。
 
-服务端当前使用 MySQL 持久化发布、审计与移动配置。正式上线前仍需对象存储、真实 artifact 校验、telemetry 和 Playwright 关键路径；RBAC/审批按后续项目阶段独立接入。
+服务端使用 MySQL 持久化发布、审计、移动配置、租户对象存储版本与 Artifact 元数据。`distribution-settings` 插件提供租户切换、S3/R2/MinIO 配置、连接测试、应用 package/签名身份和 Artifact 校验结果；长期凭证只提交给 RN-Server 加密保存，不会回显。生产上线仍需接入 telemetry，并在目标对象存储上完成真实大文件/CORS E2E；RBAC/审批按后续项目阶段独立接入。

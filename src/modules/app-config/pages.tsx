@@ -23,6 +23,7 @@ import {
   EmptyState,
   StatusPill,
 } from "../../design-system/components";
+import type { AdminPageProps } from "../../plugin-system/types";
 
 const paletteKeys = [
   "primary",
@@ -71,9 +72,12 @@ const featureLabels: Record<keyof ManagedAppConfig["features"], string> = {
   diagnosticsEnabled: "诊断信息",
 };
 
-export function AppConfigPage() {
+export function AppConfigPage({ tenantId }: AdminPageProps) {
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ["config"], queryFn: adminApi.config });
+  const query = useQuery({
+    queryKey: ["config", tenantId],
+    queryFn: () => adminApi.config(tenantId),
+  });
   const [draft, setDraft] = useState<ManagedAppConfig | null>(null);
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
   const [reason, setReason] = useState("");
@@ -91,10 +95,10 @@ export function AppConfigPage() {
       config: ManagedAppConfig;
       expectedVersion: number;
       changeReason: string;
-    }) => adminApi.saveConfig(config, expectedVersion, changeReason),
+    }) => adminApi.saveConfig(tenantId, config, expectedVersion, changeReason),
     onSuccess: (saved) => {
-      queryClient.setQueryData<AppConfig>(["config"], saved);
-      void queryClient.invalidateQueries({ queryKey: ["audits"] });
+      queryClient.setQueryData<AppConfig>(["config", tenantId], saved);
+      void queryClient.invalidateQueries({ queryKey: ["audits", tenantId] });
       setDraft(null);
       setDraftVersion(null);
       setReason("");

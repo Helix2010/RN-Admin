@@ -11,6 +11,7 @@ import {
   FileClock,
   Moon,
   Sun,
+  CloudCog,
 } from "lucide-react";
 import {
   registerAdminPlugin,
@@ -19,18 +20,27 @@ import {
 import { releaseManagementPlugin } from "../modules/release-management/plugin";
 import { appConfigPlugin } from "../modules/app-config/plugin";
 import { auditPlugin } from "../modules/audit/plugin";
-import { ApiError, authApi, type AdminSession } from "../core/api";
+import { distributionSettingsPlugin } from "../modules/distribution-settings/plugin";
+import {
+  adminApi,
+  ApiError,
+  authApi,
+  type AdminSession,
+  type Tenant,
+} from "../core/api";
 import { LoginPage } from "./LoginPage";
 
 registerAdminPlugin(releaseManagementPlugin);
 registerAdminPlugin(appConfigPlugin);
 registerAdminPlugin(auditPlugin);
+registerAdminPlugin(distributionSettingsPlugin);
 
 const iconMap = {
   dashboard: LayoutDashboard,
   rocket: Rocket,
   settings: Settings2,
   audit: FileClock,
+  cloud: CloudCog,
 };
 
 export function App() {
@@ -46,6 +56,12 @@ export function App() {
     window.localStorage.setItem("rn-admin-theme", theme);
   }, [theme]);
   const [session, setSession] = useState<AdminSession | null>(null);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantLoading, setTenantLoading] = useState(false);
+  const [tenantError, setTenantError] = useState("");
+  const [selectedTenantId, setSelectedTenantId] = useState(() =>
+    window.localStorage.getItem("rn-admin-tenant"),
+  );
   const [checkingSession, setCheckingSession] = useState(true);
   useEffect(() => {
     let active = true;
@@ -71,6 +87,44 @@ export function App() {
     return () =>
       window.removeEventListener("rn-admin:unauthorized", unauthorized);
   }, [queryClient]);
+  useEffect(() => {
+    if (!session) {
+      setTenants([]);
+      return;
+    }
+    let active = true;
+    const loadTenants = () => {
+      setTenantLoading(true);
+      adminApi
+        .tenants()
+        .then(({ items }) => {
+          if (!active) return;
+          setTenants(items);
+          setTenantError("");
+          setSelectedTenantId((current) => {
+            const next = items.some((item) => item.id === current)
+              ? current
+              : (items[0]?.id ?? null);
+            if (next) window.localStorage.setItem("rn-admin-tenant", next);
+            return next;
+          });
+        })
+        .catch((error: unknown) => {
+          if (active) {
+            setTenantError(
+              error instanceof Error ? error.message : "无法加载租户",
+            );
+          }
+        })
+        .finally(() => active && setTenantLoading(false));
+    };
+    loadTenants();
+    window.addEventListener("rn-admin:tenants-changed", loadTenants);
+    return () => {
+      active = false;
+      window.removeEventListener("rn-admin:tenants-changed", loadTenants);
+    };
+  }, [session]);
 
   const logout = async () => {
     try {
@@ -93,6 +147,22 @@ export function App() {
         onAuthenticated={setSession}
       />
     );
+  }
+  if (tenantLoading || (!selectedTenantId && !tenantError)) {
+    return <div className="session-loading">正在加载租户工作区…</div>;
+  }
+  if (tenantError || !selectedTenantId) {
+    return (
+      <div className="session-loading">
+        无法进入租户工作区：{tenantError || "没有可用租户"}
+      </div>
+    );
+  }
+  const selectedTenant = tenants.find(
+    (tenant) => tenant.id === selectedTenantId,
+  );
+  if (!selectedTenant) {
+    return <div className="session-loading">正在同步租户工作区…</div>;
   }
   const activePlugin = plugins.find((plugin) =>
     Object.hasOwn(plugin.pages, page),
@@ -161,6 +231,26 @@ export function App() {
             <strong>{pageLabel}</strong>
           </div>
           <div className="profile">
+            <label className="tenant-switcher">
+              <span>租户</span>
+              <select
+                aria-label="当前租户"
+                value={selectedTenantId}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setSelectedTenantId(next);
+                  window.localStorage.setItem("rn-admin-tenant", next);
+                  queryClient.clear();
+                  setPage("dashboard");
+                }}
+              >
+                {tenants.map((tenant) => (
+                  <option key={tenant.id} value={tenant.id}>
+                    {tenant.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               className="theme-toggle"
               type="button"
@@ -180,7 +270,11 @@ export function App() {
           </div>
         </header>
         <div className="content">
-          <Page onNavigate={navigate} />
+          <Page
+            onNavigate={navigate}
+            tenantId={selectedTenant.id}
+            tenantName={selectedTenant.name}
+          />
         </div>
       </main>
     </div>

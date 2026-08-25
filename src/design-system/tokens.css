@@ -226,6 +226,64 @@ button {
   justify-content: space-between;
   margin-top: 12px;
 }
+.prerequisite-panel,
+.upload-summary,
+.credential-title,
+.application-row,
+.upload-progress-panel > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.prerequisite-panel {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.prerequisite-panel > div,
+.upload-summary > div {
+  flex: 1;
+}
+.prerequisite-panel p,
+.upload-summary p {
+  margin-top: 3px;
+  font-size: 12px;
+}
+.release-upload-grid,
+.storage-form,
+.compact-form {
+  display: grid;
+  gap: 16px;
+}
+.release-upload-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.release-notes-field,
+.upload-summary,
+.upload-progress-panel {
+  grid-column: 1 / -1;
+}
+.upload-summary,
+.upload-progress-panel,
+.credential-panel {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.upload-progress-panel > div:first-child {
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.upload-progress-panel strong {
+  color: var(--brand);
+}
+.file-input {
+  padding: 8px;
+}
 .main {
   margin-left: 252px;
   width: calc(100% - 252px);
@@ -256,6 +314,24 @@ button {
   gap: 10px;
   color: var(--muted);
   font-size: 13px;
+}
+.tenant-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+  margin-right: 4px;
+  border-right: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.tenant-switcher select {
+  min-width: 150px;
+  padding: 7px 30px 7px 10px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
 }
 .theme-toggle {
   width: 34px;
@@ -590,6 +666,56 @@ tr:hover td {
 }
 .form-grid-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.distribution-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(360px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+}
+.distribution-side {
+  display: grid;
+  gap: 18px;
+}
+.credential-title span {
+  margin-left: auto;
+  color: var(--success);
+  font-size: 11px;
+}
+.credential-panel > p {
+  margin: 5px 0 14px;
+  font-size: 11px;
+}
+.application-row {
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.application-row svg {
+  color: var(--success);
+  flex: 0 0 17px;
+}
+.application-row p,
+.application-row span {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.artifact-table {
+  margin-top: 18px;
+}
+.artifact-digest {
+  max-width: 220px;
+  font-size: 11px;
+}
+.error-text {
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.4;
 }
 .form-field {
   display: grid;
