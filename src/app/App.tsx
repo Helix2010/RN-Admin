@@ -135,11 +135,16 @@ export function App() {
           </div>
         ))}
         <div style={{ position: "absolute", left: 18, right: 18, bottom: 22 }}>
-          <button className="nav-item" type="button" onClick={logout}>
+          <a
+            className="nav-item"
+            href="https://github.com/Helix2010/RN-Admin#readme"
+            target="_blank"
+            rel="noreferrer"
+          >
             <CircleHelp size={17} />
             帮助与规范
-          </button>
-          <button className="nav-item">
+          </a>
+          <button className="nav-item" type="button" onClick={logout}>
             <LogOut size={17} />
             退出管理端
           </button>

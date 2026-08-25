@@ -12,7 +12,7 @@ pnpm dev
 
 先启动相邻的 RN-Server。默认访问 `http://localhost:5173`。
 
-当前实现通过 RN-Server 登录并使用 HttpOnly 会话，浏览器构建不包含长期管理密钥。发布、审计和移动配置由 MySQL 持久化。当前阶段不加入 RBAC 与双人审批；对象存储、真实 artifact 校验、HTTPS 和 telemetry provider 仍需后续接入。
+当前实现通过 RN-Server 登录并使用 HttpOnly 会话，浏览器构建不包含长期管理密钥。发布、审计和移动配置由 MySQL 持久化，生产环境通过 Caddy 提供 HTTPS。当前阶段不加入 RBAC 与双人审批；对象存储、真实 artifact 校验和 telemetry provider 仍需后续接入。
 
 ## 目录
 

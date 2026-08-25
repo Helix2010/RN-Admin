@@ -209,6 +209,7 @@ button {
   color: var(--muted);
   background: transparent;
   text-align: left;
+  text-decoration: none;
 }
 .nav-item:hover,
 .nav-item.active {
@@ -217,6 +218,13 @@ button {
 }
 .nav-item.active {
   box-shadow: inset 3px 0 var(--brand);
+}
+.action-confirmation {
+  margin-bottom: 18px;
+}
+.action-confirmation-footer {
+  justify-content: space-between;
+  margin-top: 12px;
 }
 .main {
   margin-left: 252px;

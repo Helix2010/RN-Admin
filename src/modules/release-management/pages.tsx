@@ -22,6 +22,14 @@ function useAdminQuery<T>(key: string[], queryFn: () => Promise<T>) {
   return useQuery({ queryKey: key, queryFn, staleTime: 15_000 });
 }
 
+const actionLabels: Record<string, string> = {
+  verify: "校验",
+  stage: "预发布",
+  activate: "激活",
+  pause: "暂停",
+  rollback: "回滚",
+};
+
 export function DashboardPage({ onNavigate }: AdminPageProps) {
   const query = useAdminQuery(["overview"], adminApi.overview);
   if (query.isLoading)
@@ -138,8 +146,8 @@ export function DashboardPage({ onNavigate }: AdminPageProps) {
               <StatusPill status="production guard" />
             </div>
             <p style={{ marginTop: 16, fontSize: 12 }}>
-              当前管理 API 使用开发密钥适配器，发布数据已持久化到 MySQL； RBAC
-              与双人审批暂不进入当前流程。
+              当前管理 API 使用 HttpOnly 服务端会话，发布数据已持久化到 MySQL；
+              RBAC 与双人审批暂不进入当前流程。
             </p>
           </div>
         </Card>
@@ -156,6 +164,11 @@ export function ReleasesPage() {
   const [version, setVersion] = React.useState("1.2.0");
   const [buildNumber, setBuildNumber] = React.useState("120");
   const [percentage, setPercentage] = React.useState("10");
+  const [pendingAction, setPendingAction] = React.useState<{
+    id: string;
+    action: string;
+  } | null>(null);
+  const [actionReason, setActionReason] = React.useState("");
   const createMutation = useMutation({
     mutationFn: () =>
       adminApi.createRelease({
@@ -189,9 +202,18 @@ export function ReleasesPage() {
     },
   });
   const mutation = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: string }) =>
-      adminApi.action(id, action, `${action} from release console`),
+    mutationFn: ({
+      id,
+      action,
+      reason,
+    }: {
+      id: string;
+      action: string;
+      reason: string;
+    }) => adminApi.action(id, action, reason),
     onSuccess: () => {
+      setPendingAction(null);
+      setActionReason("");
       void queryClient.invalidateQueries({ queryKey: ["releases"] });
       void queryClient.invalidateQueries({ queryKey: ["overview"] });
     },
@@ -205,9 +227,20 @@ export function ReleasesPage() {
     );
   const releases = query.data?.items ?? [];
   const runAction = (id: string, action: string) => {
-    if (!window.confirm(`确认执行 ${action}？该动作会写入审计日志。`)) return;
-    setBusy(`${id}:${action}`);
-    mutation.mutate({ id, action }, { onSettled: () => setBusy(null) });
+    setPendingAction({ id, action });
+    setActionReason("");
+  };
+  const confirmAction = () => {
+    if (!pendingAction) return;
+    const reason = actionReason.trim();
+    const label = actionLabels[pendingAction.action] ?? pendingAction.action;
+    if (reason.length < 3) return;
+    if (!window.confirm(`确认${label}？操作原因将写入审计日志。`)) return;
+    setBusy(`${pendingAction.id}:${pendingAction.action}`);
+    mutation.mutate(
+      { ...pendingAction, reason },
+      { onSettled: () => setBusy(null) },
+    );
   };
   return (
     <>
@@ -270,6 +303,55 @@ export function ReleasesPage() {
             )}
           </div>
         </div>
+      )}
+      {pendingAction && (
+        <Card className="action-confirmation">
+          <div className="card-header">
+            <div>
+              <h2>
+                确认
+                {actionLabels[pendingAction.action] ?? pendingAction.action}
+              </h2>
+              <p>请填写可审计的操作原因，提交后不能从审计记录中删除。</p>
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPendingAction(null);
+                setActionReason("");
+              }}
+            >
+              取消
+            </Button>
+          </div>
+          <div className="card-body">
+            <textarea
+              className="input textarea"
+              aria-label="操作原因"
+              placeholder="至少 3 个字符，例如：已完成测试环境安装验证"
+              value={actionReason}
+              onChange={(event) => setActionReason(event.target.value)}
+            />
+            <div className="toolbar action-confirmation-footer">
+              <span className="muted">原因会与操作者、请求 ID 一起记录</span>
+              <Button
+                variant={
+                  pendingAction.action === "rollback" ? "danger" : "primary"
+                }
+                disabled={actionReason.trim().length < 3 || mutation.isPending}
+                onClick={confirmAction}
+              >
+                确认
+                {actionLabels[pendingAction.action] ?? pendingAction.action}
+              </Button>
+            </div>
+            {mutation.isError && (
+              <div className="error-banner">
+                操作失败：{mutation.error.message}
+              </div>
+            )}
+          </div>
+        </Card>
       )}
       <Card className="table-wrap">
         <div className="card-header">
