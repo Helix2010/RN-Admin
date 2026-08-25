@@ -3,13 +3,21 @@ import * as React from "react";
 import {
   Activity,
   ArrowUpRight,
+  CheckCircle2,
   CirclePause,
   CloudUpload,
+  Copy,
+  ExternalLink,
   FileArchive,
   RotateCcw,
   ShieldCheck,
 } from "lucide-react";
-import { adminApi, uploadArtifactFile } from "../../core/api";
+import {
+  adminApi,
+  publicApiUrl,
+  uploadArtifactFile,
+  type Release,
+} from "../../core/api";
 import {
   Button,
   Card,
@@ -23,9 +31,9 @@ function useAdminQuery<T>(key: string[], queryFn: () => Promise<T>) {
 }
 
 const actionLabels: Record<string, string> = {
-  verify: "校验",
+  publish: "发布到官网",
   stage: "预发布",
-  activate: "激活",
+  activate: "恢复发布",
   pause: "暂停",
   rollback: "回滚",
 };
@@ -164,6 +172,9 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
     adminApi.releases(tenantId),
   );
   const [showCreate, setShowCreate] = React.useState(false);
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  const [publishedRelease, setPublishedRelease] =
+    React.useState<Release | null>(null);
   const applicationsQuery = useAdminQuery(["applications", tenantId], () =>
     adminApi.applications(tenantId),
   );
@@ -175,7 +186,7 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
   const [runtimeVersion, setRuntimeVersion] = React.useState("expo:57.0.15");
   const [releaseNotes, setReleaseNotes] =
     React.useState("修复已知问题并优化体验");
-  const [percentage, setPercentage] = React.useState("10");
+  const [percentage, setPercentage] = React.useState("100");
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [uploadStage, setUploadStage] = React.useState("");
   const [pendingAction, setPendingAction] = React.useState<{
@@ -211,8 +222,12 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
       if (!artifact.versionName || !artifact.versionCode) {
         throw new Error("服务端未返回完整 APK 版本信息");
       }
+      const auditReason = releaseNotes.trim().slice(0, 400);
+      if (auditReason.length < 3) {
+        throw new Error("请填写至少 3 个字符的发布说明");
+      }
       setUploadStage("正在创建发布记录");
-      return adminApi.createRelease(tenantId, {
+      const created = await adminApi.createRelease(tenantId, {
         applicationId,
         platform: "android",
         version: artifact.versionName,
@@ -231,19 +246,34 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
           stopRule: null,
         },
       });
+      setUploadStage("正在发布到官网");
+      await adminApi.action(
+        tenantId,
+        created.release.id,
+        "stage",
+        `${auditReason}（APK 校验通过）`,
+      );
+      const activated = await adminApi.action(
+        tenantId,
+        created.release.id,
+        "activate",
+        auditReason,
+      );
+      return activated.release;
     },
-    onSuccess: () => {
+    onSuccess: (release) => {
       setShowCreate(false);
       setFile(null);
       setUploadProgress(0);
       setUploadStage("");
+      setPublishedRelease(release);
       void queryClient.invalidateQueries({ queryKey: ["releases", tenantId] });
       void queryClient.invalidateQueries({ queryKey: ["overview", tenantId] });
       void queryClient.invalidateQueries({ queryKey: ["artifacts", tenantId] });
     },
   });
   const mutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       id,
       action,
       reason,
@@ -251,10 +281,17 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
       id: string;
       action: string;
       reason: string;
-    }) => adminApi.action(tenantId, id, action, reason),
-    onSuccess: () => {
+    }) => {
+      if (action === "publish") {
+        await adminApi.action(tenantId, id, "stage", reason);
+        return adminApi.action(tenantId, id, "activate", reason);
+      }
+      return adminApi.action(tenantId, id, action, reason);
+    },
+    onSuccess: ({ release }) => {
       setPendingAction(null);
       setActionReason("");
+      if (release.status === "active") setPublishedRelease(release);
       void queryClient.invalidateQueries({ queryKey: ["releases", tenantId] });
       void queryClient.invalidateQueries({ queryKey: ["overview", tenantId] });
     },
@@ -285,17 +322,66 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
         <div>
           <div className="eyebrow">Release management</div>
           <h1>发布管理</h1>
-          <p>同一份已校验 artifact 通过状态机进入灰度、全量或回滚。</p>
+          <p>上传 APK，服务端自动校验后发布到官网，生成可分享的安装链接。</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
+        <Button
+          onClick={() => {
+            setPublishedRelease(null);
+            setShowCreate(true);
+          }}
+        >
           <CloudUpload size={16} />
-          创建发布
+          上传 APK
         </Button>
       </div>
+      {publishedRelease?.artifact?.downloadUrl && (
+        <Card className="publish-success-card">
+          <div className="publish-success-icon">
+            <CheckCircle2 size={22} />
+          </div>
+          <div className="publish-success-content">
+            <strong>v{publishedRelease.version} 已发布到官网</strong>
+            <span>
+              build {publishedRelease.buildNumber} · Android Direct ·
+              可直接下载安装
+            </span>
+            <div className="publish-link-row">
+              <a
+                href={publicApiUrl(publishedRelease.artifact.downloadUrl)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {publicApiUrl(publishedRelease.artifact.downloadUrl)}
+              </a>
+              <Button
+                variant="ghost"
+                aria-label="复制安装链接"
+                onClick={() =>
+                  void navigator.clipboard?.writeText(
+                    publicApiUrl(publishedRelease.artifact!.downloadUrl!),
+                  )
+                }
+              >
+                <Copy size={14} />
+                复制
+              </Button>
+              <a
+                className="icon-link"
+                href={publicApiUrl(publishedRelease.artifact.downloadUrl)}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="打开安装链接"
+              >
+                <ExternalLink size={15} />
+              </a>
+            </div>
+          </div>
+        </Card>
+      )}
       {showCreate && (
         <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-header">
-            <h2>创建 Android Direct 发布</h2>
+            <h2>发布 Android APK</h2>
             <Button variant="ghost" onClick={() => setShowCreate(false)}>
               取消
             </Button>
@@ -306,37 +392,36 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
               <div className="prerequisite-panel">
                 <ShieldCheck size={20} />
                 <div>
-                  <strong>发布前还需要完成租户分发配置</strong>
+                  <strong>首次使用需要完成一次高级设置</strong>
                   <p>
                     {!storageQuery.data?.configured
-                      ? "请先配置并测试 S3 兼容对象存储。"
-                      : "请先登记 Android packageName 与签名证书 SHA-256。"}
+                      ? "请先配置对象存储，后续 APK 会自动上传并校验。"
+                      : "请先绑定 Android 应用身份，后续会自动匹配签名。"}
                   </p>
                 </div>
                 <Button
                   variant="ghost"
                   onClick={() => onNavigate("distribution")}
                 >
-                  前往配置
+                  打开高级设置
                 </Button>
               </div>
             ) : (
               <div className="release-upload-grid">
-                <label className="form-field">
-                  <span>Android 应用</span>
-                  <select
-                    className="select"
-                    value={applicationId}
-                    onChange={(event) => setApplicationId(event.target.value)}
-                    disabled={createMutation.isPending}
-                  >
-                    {applicationsQuery.data?.items.map((application) => (
-                      <option value={application.id} key={application.id}>
-                        {application.name} · {application.packageName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="release-identity-note">
+                  <CheckCircle2 size={17} />
+                  <div>
+                    <strong>
+                      已绑定应用：
+                      {applicationsQuery.data?.items.find(
+                        (application) => application.id === applicationId,
+                      )?.name ?? applicationId}
+                    </strong>
+                    <span>
+                      版本号、packageName 和签名证书均由服务端从 APK 自动校验
+                    </span>
+                  </div>
+                </div>
                 <label className="form-field">
                   <span>APK 安装包</span>
                   <input
@@ -350,31 +435,11 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                   />
                   <small>最大尺寸由服务端控制；版本号与签名均从 APK 读取</small>
                 </label>
-                <label className="form-field">
-                  <span>Runtime Version</span>
-                  <input
-                    className="input"
-                    value={runtimeVersion}
-                    disabled={createMutation.isPending}
-                    onChange={(event) => setRuntimeVersion(event.target.value)}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>首批灰度比例</span>
-                  <input
-                    className="input"
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={percentage}
-                    disabled={createMutation.isPending}
-                    onChange={(event) => setPercentage(event.target.value)}
-                  />
-                </label>
                 <label className="form-field release-notes-field">
-                  <span>发布说明（每行一条）</span>
+                  <span>发布说明</span>
                   <textarea
                     className="input textarea"
+                    placeholder="例如：修复行情刷新问题，优化钱包连接体验"
                     value={releaseNotes}
                     disabled={createMutation.isPending}
                     onChange={(event) => setReleaseNotes(event.target.value)}
@@ -387,7 +452,7 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                     <p>
                       {file
                         ? formatBytes(file.size)
-                        : "文件将直接上传到租户对象存储"}
+                        : "文件将直接上传到当前项目的对象存储"}
                     </p>
                   </div>
                   <Button
@@ -395,13 +460,23 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                       createMutation.isPending ||
                       !file ||
                       !applicationId ||
+                      releaseNotes.trim().length < 3 ||
                       Number(percentage) < 1 ||
                       Number(percentage) > 100
                     }
-                    onClick={() => createMutation.mutate()}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          "确认上传并发布到官网？服务端会校验 APK 签名、版本和应用身份。",
+                        )
+                      ) {
+                        return;
+                      }
+                      createMutation.mutate();
+                    }}
                   >
                     <CloudUpload size={16} />
-                    上传、校验并创建发布
+                    校验并发布到官网
                   </Button>
                 </div>
                 {createMutation.isPending && (
@@ -415,6 +490,57 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                     </div>
                   </div>
                 )}
+                <details
+                  className="advanced-release-options"
+                  open={advancedOpen}
+                  onToggle={(event) =>
+                    setAdvancedOpen(event.currentTarget.open)
+                  }
+                >
+                  <summary>高级选项</summary>
+                  <div className="form-grid form-grid-3">
+                    <label className="form-field">
+                      <span>Android 应用</span>
+                      <select
+                        className="select"
+                        value={applicationId}
+                        onChange={(event) =>
+                          setApplicationId(event.target.value)
+                        }
+                        disabled={createMutation.isPending}
+                      >
+                        {applicationsQuery.data?.items.map((application) => (
+                          <option value={application.id} key={application.id}>
+                            {application.name} · {application.packageName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-field">
+                      <span>Runtime Version</span>
+                      <input
+                        className="input"
+                        value={runtimeVersion}
+                        disabled={createMutation.isPending}
+                        onChange={(event) =>
+                          setRuntimeVersion(event.target.value)
+                        }
+                      />
+                    </label>
+                    <label className="form-field">
+                      <span>发布比例</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={percentage}
+                        disabled={createMutation.isPending}
+                        onChange={(event) => setPercentage(event.target.value)}
+                      />
+                    </label>
+                  </div>
+                </details>
               </div>
             )}
             {createMutation.isError && (
@@ -477,9 +603,9 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
       <Card className="table-wrap">
         <div className="card-header">
           <div>
-            <h2>全部发布</h2>
+            <h2>发布记录</h2>
             <p style={{ fontSize: 12, marginTop: 4 }}>
-              数据来源：MySQL 持久化仓储
+              查看官网当前版本与历史发布结果
             </p>
           </div>
           <div className="toolbar">
@@ -499,10 +625,9 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
               <tr>
                 <th>版本</th>
                 <th>平台 / 渠道</th>
-                <th>Runtime</th>
                 <th>状态</th>
-                <th>灰度</th>
                 <th>更新时间</th>
+                <th>安装链接</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -519,19 +644,8 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                     {release.platform}
                     <div className="muted">{release.channel}</div>
                   </td>
-                  <td className="mono muted">{release.runtimeVersion}</td>
                   <td>
                     <StatusPill status={release.status} />
-                  </td>
-                  <td style={{ minWidth: 130 }}>
-                    <div className="mono" style={{ marginBottom: 5 }}>
-                      {release.rollout.percentage}%
-                    </div>
-                    <div className="progress">
-                      <span
-                        style={{ width: `${release.rollout.percentage}%` }}
-                      />
-                    </div>
                   </td>
                   <td className="muted">
                     {new Date(release.updatedAt).toLocaleString("zh-CN", {
@@ -542,17 +656,32 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                     })}
                   </td>
                   <td>
+                    {release.status === "active" &&
+                    release.artifact?.downloadUrl ? (
+                      <a
+                        className="table-link"
+                        href={publicApiUrl(release.artifact.downloadUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <ExternalLink size={14} />
+                        获取链接
+                      </a>
+                    ) : (
+                      <span className="muted">发布后生成</span>
+                    )}
+                  </td>
+                  <td>
                     <div className="toolbar">
                       {release.status === "uploaded" && (
                         <span className="muted">需重新上传真实 APK</span>
                       )}
                       {release.status === "verified" && (
                         <Button
-                          variant="ghost"
-                          onClick={() => runAction(release.id, "stage")}
+                          onClick={() => runAction(release.id, "publish")}
                         >
                           <ShieldCheck size={14} />
-                          预发布
+                          发布到官网
                         </Button>
                       )}
                       {release.status === "staged" && (
@@ -560,7 +689,7 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                           onClick={() => runAction(release.id, "activate")}
                         >
                           <ArrowUpRight size={14} />
-                          激活
+                          完成发布
                         </Button>
                       )}
                       {release.status === "active" && (

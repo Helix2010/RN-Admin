@@ -415,6 +415,11 @@ export const adminApi = {
     ),
 };
 
+export function publicApiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 function tenantPath(tenantId: string, suffix: string): string {
   return `/v1/admin/tenants/${encodeURIComponent(tenantId)}${suffix}`;
 }

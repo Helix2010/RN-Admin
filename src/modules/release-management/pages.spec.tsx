@@ -19,6 +19,7 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock("../../core/api", () => ({
   adminApi: apiMocks,
+  publicApiUrl: (path: string) => `https://api.example.com${path}`,
   uploadArtifactFile: apiMocks.uploadArtifactFile,
 }));
 
@@ -76,17 +77,25 @@ describe("ReleasesPage actions", () => {
       </QueryClientProvider>,
     );
 
-    await user.click(await screen.findByRole("button", { name: "预发布" }));
+    await user.click(await screen.findByRole("button", { name: "发布到官网" }));
     await user.type(
       screen.getByRole("textbox", { name: "操作原因" }),
       "确认安装包签名和安装测试完成",
     );
-    await user.click(screen.getByRole("button", { name: "确认预发布" }));
+    await user.click(screen.getByRole("button", { name: "确认发布到官网" }));
 
-    expect(apiMocks.action).toHaveBeenCalledWith(
+    expect(apiMocks.action).toHaveBeenNthCalledWith(
+      1,
       "tenant-a",
       "release-1",
       "stage",
+      "确认安装包签名和安装测试完成",
+    );
+    expect(apiMocks.action).toHaveBeenNthCalledWith(
+      2,
+      "tenant-a",
+      "release-1",
+      "activate",
       "确认安装包签名和安装测试完成",
     );
   });
@@ -134,11 +143,23 @@ describe("ReleasesPage actions", () => {
       },
     });
     apiMocks.createRelease.mockResolvedValue({ release: { id: "release-1" } });
+    apiMocks.action
+      .mockResolvedValueOnce({ release: { id: "release-1", status: "staged" } })
+      .mockResolvedValueOnce({
+        release: {
+          id: "release-1",
+          version: "1.3.0",
+          buildNumber: 130,
+          status: "active",
+          artifact: { downloadUrl: "/v1/public/artifacts/artifact-1/download" },
+        },
+      });
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
     const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <QueryClientProvider client={queryClient}>
         <ReleasesPage
@@ -149,14 +170,12 @@ describe("ReleasesPage actions", () => {
       </QueryClientProvider>,
     );
 
-    await user.click(await screen.findByRole("button", { name: "创建发布" }));
+    await user.click(await screen.findByRole("button", { name: "上传 APK" }));
     const apk = new File(["signed-apk"], "dex-1.3.0.apk", {
       type: "application/vnd.android.package-archive",
     });
     await user.upload(screen.getByLabelText(/APK 安装包/), apk);
-    await user.click(
-      screen.getByRole("button", { name: "上传、校验并创建发布" }),
-    );
+    await user.click(screen.getByRole("button", { name: "校验并发布到官网" }));
 
     await waitFor(() => {
       expect(apiMocks.createRelease).toHaveBeenCalledWith(
@@ -169,6 +188,20 @@ describe("ReleasesPage actions", () => {
         }),
       );
     });
+    expect(apiMocks.action).toHaveBeenNthCalledWith(
+      1,
+      "tenant-a",
+      "release-1",
+      "stage",
+      expect.stringContaining("APK 校验通过"),
+    );
+    expect(apiMocks.action).toHaveBeenNthCalledWith(
+      2,
+      "tenant-a",
+      "release-1",
+      "activate",
+      "修复已知问题并优化体验",
+    );
     expect(apiMocks.uploadArtifactFile).toHaveBeenCalledWith(
       expect.objectContaining({ method: "PUT" }),
       apk,

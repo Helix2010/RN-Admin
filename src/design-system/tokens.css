@@ -333,6 +333,14 @@ button {
   border-radius: 9px;
   background: var(--panel);
 }
+.project-badge {
+  padding: 7px 11px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  font-size: 12px;
+}
 .theme-toggle {
   width: 34px;
   height: 34px;
@@ -509,7 +517,9 @@ p {
   background: #fff0d1;
 }
 .status-draft,
-.status-uploaded {
+.status-uploaded,
+.status-verified,
+.status-staged {
   color: #2d5dbb;
   background: #e3edff;
 }
@@ -707,6 +717,34 @@ tr:hover td {
 .artifact-table {
   margin-top: 18px;
 }
+.advanced-settings-section {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 12px 30px rgba(36, 65, 111, 0.06);
+}
+.advanced-settings-section + .advanced-settings-section {
+  margin-top: 18px;
+}
+.advanced-settings-section > summary,
+.advanced-release-options > summary {
+  padding: 17px 20px;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+}
+.advanced-settings-section[open] > summary,
+.advanced-release-options[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.advanced-settings-section > .distribution-side,
+.advanced-settings-section > .card {
+  margin: 16px;
+}
+.advanced-settings-section .artifact-table {
+  margin-top: 0;
+}
 .artifact-digest {
   max-width: 220px;
   font-size: 11px;
@@ -734,6 +772,100 @@ tr:hover td {
 .form-field .input,
 .form-field .select {
   width: 100%;
+}
+.release-identity-note {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 15px;
+  color: var(--success-text);
+  border: 1px solid var(--success-border);
+  border-radius: 11px;
+  background: var(--success-bg);
+}
+.release-identity-note svg {
+  flex: 0 0 17px;
+}
+.release-identity-note strong,
+.release-identity-note span {
+  display: block;
+}
+.release-identity-note span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.advanced-release-options {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel-2);
+}
+.advanced-release-options .form-grid {
+  padding: 16px;
+}
+.publish-success-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border-color: var(--success-border);
+  background: var(--success-bg);
+}
+.publish-success-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  color: var(--success-text);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.publish-success-content {
+  min-width: 0;
+  flex: 1;
+}
+.publish-success-content > strong,
+.publish-success-content > span {
+  display: block;
+}
+.publish-success-content > span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.publish-link-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 12px;
+}
+.publish-link-row > a:first-child {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--brand);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-link {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--brand);
+  border-radius: 9px;
+  background: var(--hover);
+}
+.table-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand);
+  font-weight: 700;
+  text-decoration: none;
 }
 .config-inline-fields {
   max-width: 640px;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -71,7 +71,18 @@ describe("App sidebar actions", () => {
         },
       ],
     });
-    apiMocks.overview.mockReturnValue(new Promise(() => undefined));
+    apiMocks.releases.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+    });
+    apiMocks.applications.mockResolvedValue({ items: [] });
+    apiMocks.storageConfig.mockResolvedValue({
+      configured: false,
+      version: 0,
+      credentialsConfigured: false,
+      sessionTokenConfigured: false,
+    });
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -84,6 +95,11 @@ describe("App sidebar actions", () => {
     );
 
     const help = await screen.findByRole("link", { name: "帮助与规范" });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "发布管理" })).toBeTruthy(),
+    );
+    expect(screen.getByText("Default tenant")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "当前项目" })).toBeNull();
     expect(help.getAttribute("href")).toBe(
       "https://github.com/Helix2010/RN-Admin#readme",
     );

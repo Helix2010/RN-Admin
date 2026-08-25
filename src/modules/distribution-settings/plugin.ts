@@ -4,9 +4,9 @@ import { DistributionSettingsPage } from "./pages";
 
 export const distributionSettingsPlugin: AdminPlugin = {
   id: "distribution-settings",
-  label: "分发基础设施",
+  label: "系统设置",
   icon: "cloud",
-  navigation: [{ id: "distribution", label: "租户与对象存储", icon: "cloud" }],
+  navigation: [{ id: "distribution", label: "高级设置", icon: "cloud" }],
   pages: { distribution: DistributionSettingsPage },
 };
 

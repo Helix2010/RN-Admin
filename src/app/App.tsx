@@ -46,7 +46,7 @@ const iconMap = {
 export function App() {
   const queryClient = useQueryClient();
   const plugins = getAdminPlugins();
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState("releases");
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const saved = window.localStorage.getItem("rn-admin-theme");
     return saved === "dark" ? "dark" : "light";
@@ -132,7 +132,7 @@ export function App() {
     } finally {
       queryClient.clear();
       setSession(null);
-      setPage("dashboard");
+      setPage("releases");
     }
   };
 
@@ -231,26 +231,30 @@ export function App() {
             <strong>{pageLabel}</strong>
           </div>
           <div className="profile">
-            <label className="tenant-switcher">
-              <span>租户</span>
-              <select
-                aria-label="当前租户"
-                value={selectedTenantId}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  setSelectedTenantId(next);
-                  window.localStorage.setItem("rn-admin-tenant", next);
-                  queryClient.clear();
-                  setPage("dashboard");
-                }}
-              >
-                {tenants.map((tenant) => (
-                  <option key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {tenants.length > 1 ? (
+              <label className="tenant-switcher">
+                <span>项目</span>
+                <select
+                  aria-label="当前项目"
+                  value={selectedTenantId}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setSelectedTenantId(next);
+                    window.localStorage.setItem("rn-admin-tenant", next);
+                    queryClient.clear();
+                    setPage("releases");
+                  }}
+                >
+                  {tenants.map((tenant) => (
+                    <option key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <span className="project-badge">{selectedTenant.name}</span>
+            )}
             <button
               className="theme-toggle"
               type="button"

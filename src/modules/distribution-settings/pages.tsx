@@ -113,11 +113,11 @@ export function DistributionSettingsPage({
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">Tenant distribution infrastructure</div>
-          <h1>租户与对象存储</h1>
+          <div className="eyebrow">Advanced settings</div>
+          <h1>高级设置</h1>
           <p>
-            当前租户：{tenantName}。配置、应用身份、APK Artifact
-            与发布记录完全隔离。
+            当前项目：{tenantName}
+            。日常发布无需操作这些配置；首次接入或更换存储时再维护。
           </p>
         </div>
         <StatusPill
@@ -327,80 +327,88 @@ export function DistributionSettingsPage({
           </div>
         </Card>
 
-        <div className="distribution-side">
-          <ApplicationPanel
-            tenantId={tenantId}
-            items={applicationsQuery.data?.items ?? []}
-          />
-          <TenantCreatePanel />
-        </div>
+        <details className="advanced-settings-section">
+          <summary>应用身份与项目管理</summary>
+          <div className="distribution-side">
+            <ApplicationPanel
+              tenantId={tenantId}
+              items={applicationsQuery.data?.items ?? []}
+            />
+            <TenantCreatePanel />
+          </div>
+        </details>
       </div>
 
-      <Card className="table-wrap artifact-table">
-        <div className="card-header">
-          <div>
-            <h2>APK Artifact</h2>
-            <p className="section-caption">
-              服务端计算 SHA-256，并验证 package、版本、minSdk 与签名证书
-            </p>
+      <details className="advanced-settings-section">
+        <summary>安装包校验记录</summary>
+        <Card className="table-wrap artifact-table">
+          <div className="card-header">
+            <div>
+              <h2>安装包校验记录</h2>
+              <p className="section-caption">
+                服务端自动计算 SHA-256，并验证 package、版本、minSdk 与签名证书
+              </p>
+            </div>
+            <Box size={19} />
           </div>
-          <Box size={19} />
-        </div>
-        {(artifactsQuery.data?.items.length ?? 0) === 0 ? (
-          <EmptyState
-            title="还没有上传过 APK"
-            detail="可从发布管理创建首个 Artifact"
-          />
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>文件</th>
-                <th>应用身份</th>
-                <th>版本</th>
-                <th>SHA-256 / 签名</th>
-                <th>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {artifactsQuery.data?.items.map((artifact) => (
-                <tr key={artifact.id}>
-                  <td>
-                    <strong>{artifact.fileName}</strong>
-                    <div className="muted mono">
-                      {formatBytes(artifact.size ?? artifact.expectedSize)}
-                    </div>
-                  </td>
-                  <td>
-                    {artifact.packageName ?? artifact.applicationId}
-                    <div className="muted">minSdk {artifact.minSdk ?? "-"}</div>
-                  </td>
-                  <td>
-                    {artifact.versionName ?? "-"}
-                    <div className="muted mono">
-                      build {artifact.versionCode ?? "-"}
-                    </div>
-                  </td>
-                  <td className="mono artifact-digest">
-                    {shortDigest(artifact.sha256)}
-                    <div className="muted">
-                      cert {shortDigest(artifact.signerSha256)}
-                    </div>
-                  </td>
-                  <td>
-                    <StatusPill status={artifact.status} />
-                    {artifact.rejectionReason && (
-                      <div className="error-text">
-                        {artifact.rejectionReason}
-                      </div>
-                    )}
-                  </td>
+          {(artifactsQuery.data?.items.length ?? 0) === 0 ? (
+            <EmptyState
+              title="还没有安装包记录"
+              detail="可从发布管理上传首个 APK"
+            />
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>文件</th>
+                  <th>应用身份</th>
+                  <th>版本</th>
+                  <th>SHA-256 / 签名</th>
+                  <th>状态</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
+              </thead>
+              <tbody>
+                {artifactsQuery.data?.items.map((artifact) => (
+                  <tr key={artifact.id}>
+                    <td>
+                      <strong>{artifact.fileName}</strong>
+                      <div className="muted mono">
+                        {formatBytes(artifact.size ?? artifact.expectedSize)}
+                      </div>
+                    </td>
+                    <td>
+                      {artifact.packageName ?? artifact.applicationId}
+                      <div className="muted">
+                        minSdk {artifact.minSdk ?? "-"}
+                      </div>
+                    </td>
+                    <td>
+                      {artifact.versionName ?? "-"}
+                      <div className="muted mono">
+                        build {artifact.versionCode ?? "-"}
+                      </div>
+                    </td>
+                    <td className="mono artifact-digest">
+                      {shortDigest(artifact.sha256)}
+                      <div className="muted">
+                        cert {shortDigest(artifact.signerSha256)}
+                      </div>
+                    </td>
+                    <td>
+                      <StatusPill status={artifact.status} />
+                      {artifact.rejectionReason && (
+                        <div className="error-text">
+                          {artifact.rejectionReason}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      </details>
     </>
   );
 }
@@ -446,7 +454,9 @@ function ApplicationPanel({
       <div className="card-header">
         <div>
           <h2>Android 应用身份</h2>
-          <p className="section-caption">激活前强制匹配 package 与签名证书</p>
+          <p className="section-caption">
+            通常只需配置一次，用于阻止错误或伪造 APK
+          </p>
         </div>
         <ServerCog size={19} />
       </div>
@@ -541,8 +551,8 @@ function TenantCreatePanel() {
     <Card>
       <div className="card-header">
         <div>
-          <h2>新增租户</h2>
-          <p className="section-caption">新租户没有继承配置或凭证</p>
+          <h2>新增独立项目</h2>
+          <p className="section-caption">仅在管理第二个品牌或客户项目时使用</p>
         </div>
         <Plus size={19} />
       </div>
@@ -558,7 +568,7 @@ function TenantCreatePanel() {
               }
             />
           </Field>
-          <Field label="租户名称">
+          <Field label="项目名称">
             <input
               className="input"
               value={form.name}
@@ -582,7 +592,7 @@ function TenantCreatePanel() {
           disabled={mutation.isPending || form.reason.trim().length < 3}
           onClick={() => mutation.mutate()}
         >
-          创建独立租户
+          创建独立项目
         </Button>
         {mutation.isError && (
           <div className="error-text">{mutation.error.message}</div>
