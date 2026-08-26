@@ -10,6 +10,7 @@ import {
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
+import { documentPayload } from "./localization-draft";
 
 export function LocalizationPage({ tenantId }: AdminPageProps) {
   const queryClient = useQueryClient();
@@ -18,27 +19,51 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
     queryFn: () => adminApi.localization(),
   });
   const [draft, setDraft] = useState<LocalizationView | null>(null);
+  const [original, setOriginal] = useState<LocalizationView | null>(null);
   const [reason, setReason] = useState("");
-  const [confirm, setConfirm] = useState<"save" | "publish" | null>(null);
+  const [confirm, setConfirm] = useState<"save" | "publish" | "discard" | null>(
+    null,
+  );
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [newLanguageCode, setNewLanguageCode] = useState("");
+  const settingsChanged = Boolean(
+    draft &&
+    original &&
+    JSON.stringify(draft.settings) !== JSON.stringify(original.settings),
+  );
+  const changedDocuments =
+    draft && original ? documentPayload(draft, original) : [];
+  const documentsChanged = changedDocuments.length > 0;
+  const hasUnsavedChanges = settingsChanged || documentsChanged;
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!draft) throw new Error("没有待保存内容");
-      await adminApi.saveLocalizationLanguages(
-        draft.settings,
-        draft.metadata.tenantVersion,
-        reason.trim(),
-      );
-      const documents = documentPayload(draft);
-      if (documents.length === 0) return adminApi.localization();
-      return adminApi.saveLocalizationDocuments(documents, reason.trim());
+      let value: LocalizationView | null = null;
+      if (settingsChanged) {
+        value = await adminApi.saveLocalizationLanguages(
+          draft.settings,
+          draft.metadata.tenantVersion,
+          reason.trim(),
+        );
+      }
+      const documents = documentsChanged ? changedDocuments : [];
+      if (documents.length > 0) {
+        value = await adminApi.saveLocalizationDocuments(
+          documents,
+          reason.trim(),
+        );
+      }
+      return value ?? adminApi.localization();
     },
     onSuccess: (value) => {
       queryClient.setQueryData(["localization", tenantId], value);
-      setDraft(null);
+      setDraft(structuredClone(value));
       setConfirm(null);
       setReason("");
+      setOriginal(structuredClone(value));
+      setError("");
+      setNotice("已保存为租户草稿，尚未生成 App 使用的发布资源。");
     },
     onError: (value: Error) => {
       setConfirm(null);
@@ -48,14 +73,17 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
   const publishMutation = useMutation({
     mutationFn: async () => {
       if (!draft) throw new Error("没有待发布内容");
-      await adminApi.saveLocalizationLanguages(
-        draft.settings,
-        draft.metadata.tenantVersion,
-        reason.trim(),
-      );
-      const documents = documentPayload(draft);
-      if (documents.length > 0)
+      if (settingsChanged) {
+        await adminApi.saveLocalizationLanguages(
+          draft.settings,
+          draft.metadata.tenantVersion,
+          reason.trim(),
+        );
+      }
+      const documents = documentsChanged ? changedDocuments : [];
+      if (documents.length > 0) {
         await adminApi.saveLocalizationDocuments(documents, reason.trim());
+      }
       return adminApi.publishLocalization([], reason.trim());
     },
     onSuccess: () => {
@@ -65,6 +93,10 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       setDraft(null);
       setConfirm(null);
       setReason("");
+      setOriginal(null);
+      setNotice(
+        "已发布，多语言资源已生成并上传对象存储，App 下次刷新会获取新版本。",
+      );
     },
     onError: (value: Error) => {
       setConfirm(null);
@@ -82,11 +114,18 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
   const languages = Object.entries(data.settings.languages).sort(
     ([, a], [, b]) => a.sort - b.sort,
   );
+  const hasUnpublishedDraft = languages.some(
+    ([, item]) => item.publishStatus !== "published",
+  );
   const begin = () => {
     setDraft(structuredClone(query.data));
+    setOriginal(structuredClone(query.data));
     setError("");
+    setNotice("");
   };
-  const updateValue = (key: string, code: string, content: string) =>
+  const updateValue = (key: string, code: string, content: string) => {
+    setNotice("");
+    setError("");
     setDraft((current) => {
       if (!current) return current;
       const next = structuredClone(current);
@@ -99,7 +138,10 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
         };
       return next;
     });
-  const addRow = () =>
+  };
+  const addRow = () => {
+    setNotice("");
+    setError("");
     setDraft((current) => {
       if (!current) return current;
       const next = structuredClone(current);
@@ -116,6 +158,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       });
       return next;
     });
+  };
   const addLanguage = () => {
     const code = newLanguageCode.trim();
     if (
@@ -147,11 +190,14 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
     });
     setNewLanguageCode("");
     setError("");
+    setNotice("");
   };
   const updateLanguage = (
     code: string,
     change: (item: LocalizationView["settings"]["languages"][string]) => void,
-  ) =>
+  ) => {
+    setNotice("");
+    setError("");
     setDraft((current) => {
       if (!current) return current;
       const next = structuredClone(current);
@@ -159,6 +205,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       next.settings.languages[code].source = "tenant";
       return next;
     });
+  };
   const exportExcel = async () => {
     const XLSX = await import("@e965/xlsx");
     const rows = data.documents.items.map((item) =>
@@ -186,6 +233,9 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         if (!sheet) throw new Error("empty workbook");
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+        const importedRows = rows.filter(
+          (row) => String(row.key ?? "").trim().length > 0,
+        ).length;
         setDraft((current) => {
           if (!current) return current;
           const next = structuredClone(current);
@@ -223,7 +273,10 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           }
           return next;
         });
-        setError(`已导入 ${rows.length} 行，请检查后保存。`);
+        setError("");
+        setNotice(
+          `已导入 ${importedRows} 行到当前草稿，请检查后点击“保存草稿”或“保存并发布”。`,
+        );
       } catch {
         setError("Excel 文件无法解析，请使用当前页面导出的模板。");
       }
@@ -235,6 +288,10 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       setError("保存或发布前请填写至少 3 个字符的原因");
       return;
     }
+    if (!hasUnsavedChanges) {
+      setError("当前没有未保存的修改。");
+      return;
+    }
     setConfirm("save");
   };
   const publish = () => {
@@ -243,6 +300,14 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       return;
     }
     setConfirm("publish");
+  };
+  const cancelEditing = () => {
+    if (hasUnsavedChanges) {
+      setConfirm("discard");
+      return;
+    }
+    setDraft(null);
+    setOriginal(null);
   };
   return (
     <>
@@ -253,9 +318,21 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           <p>语言由数据库配置动态生成，租户修改只保存覆盖项。</p>
         </div>
         <div className="heading-actions">
-          <StatusPill status={draft ? "editing" : "active"} />
+          <StatusPill
+            status={
+              draft
+                ? hasUnsavedChanges
+                  ? "editing"
+                  : hasUnpublishedDraft
+                    ? "draft"
+                    : "active"
+                : hasUnpublishedDraft
+                  ? "draft"
+                  : "active"
+            }
+          />
           {draft ? (
-            <Button variant="ghost" onClick={() => setDraft(null)}>
+            <Button variant="ghost" onClick={cancelEditing}>
               取消编辑
             </Button>
           ) : (
@@ -267,6 +344,19 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
         </div>
       </div>
       {error && <div className="error-banner">{error}</div>}
+      {notice && <div className="success-banner">{notice}</div>}
+      {draft && (
+        <div className="draft-help-banner">
+          <strong>
+            {hasUnsavedChanges ? "有未保存修改" : "当前没有未保存修改"}
+          </strong>
+          <span>
+            ① 手动输入或导入 Excel：只修改当前浏览器草稿，不会自动保存 -&gt; ②
+            保存草稿：写入数据库，App 暂不可见 -&gt; ③
+            保存并发布：生成语言资源，App 下次刷新后获取
+          </span>
+        </div>
+      )}
       <Card>
         <div className="card-header">
           <div>
@@ -464,17 +554,23 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                 添加文案
               </Button>
             )}
-            <label className="button button-ghost">
-              <UploadCloud size={15} />
-              导入 Excel
-              <input
-                hidden
-                type="file"
-                accept=".xlsx,.xls"
-                disabled={!draft}
-                onChange={(event) => importExcel(event.target.files?.[0])}
-              />
-            </label>
+            {draft ? (
+              <label className="button button-ghost">
+                <UploadCloud size={15} />
+                导入 Excel
+                <input
+                  hidden
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={(event) => {
+                    importExcel(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+            ) : (
+              <span className="section-caption">进入编辑后可导入 Excel</span>
+            )}
             <Button
               variant="ghost"
               type="button"
@@ -540,36 +636,103 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
             <span>修改原因</span>
             <textarea
               className="input textarea"
+              disabled={!draft}
               value={reason}
-              placeholder="例如：新增日语并修正文案"
+              placeholder={
+                draft ? "例如：新增日语并修正文案" : "点击“编辑多语言”后填写"
+              }
               onChange={(event) => setReason(event.target.value)}
             />
           </label>
+          <div className="save-state">
+            <StatusPill
+              status={
+                hasUnsavedChanges || hasUnpublishedDraft
+                  ? hasUnsavedChanges
+                    ? "editing"
+                    : hasUnpublishedDraft
+                      ? "draft"
+                      : "active"
+                  : "active"
+              }
+            />
+            <span>
+              {hasUnsavedChanges
+                ? "修改仍在当前浏览器草稿中，尚未写入数据库。"
+                : draft && hasUnpublishedDraft
+                  ? "草稿已保存到数据库，但尚未生成 App 可用的发布资源。"
+                  : draft
+                    ? "当前内容已发布，没有未保存修改。"
+                    : hasUnpublishedDraft
+                      ? "数据库中有已保存但尚未发布的草稿；进入编辑后可直接发布。"
+                      : "点击“编辑多语言”开始修改。"}
+            </span>
+          </div>
           <div className="save-actions">
-            <Button variant="ghost" disabled={!draft} onClick={save}>
+            <Button
+              variant="ghost"
+              disabled={
+                !draft ||
+                !hasUnsavedChanges ||
+                saveMutation.isPending ||
+                publishMutation.isPending
+              }
+              onClick={save}
+            >
               <Save size={16} />
               保存草稿
             </Button>
-            <Button disabled={!draft} onClick={publish}>
-              保存并发布
+            <Button
+              disabled={
+                !draft || saveMutation.isPending || publishMutation.isPending
+              }
+              onClick={publish}
+            >
+              {hasUnsavedChanges
+                ? "保存并发布"
+                : hasUnpublishedDraft
+                  ? "发布当前草稿"
+                  : "重新发布资源"}
             </Button>
           </div>
         </div>
       </Card>
       <ConfirmDialog
         open={confirm !== null}
-        title={confirm === "publish" ? "发布多语言资源？" : "保存多语言草稿？"}
+        title={
+          confirm === "publish"
+            ? "发布多语言资源？"
+            : confirm === "discard"
+              ? "丢弃未保存修改？"
+              : "保存多语言草稿？"
+        }
         description={
           confirm === "publish"
-            ? "将为所有启用语言生成完整 JSON 并上传对象存储。"
-            : "只保存当前租户的文案和语言设置覆盖。"
+            ? hasUnsavedChanges
+              ? "先将未保存修改写入数据库，再为所有启用语言生成完整 JSON 并上传对象存储。"
+              : "将数据库中的当前草稿生成为完整 JSON 并上传对象存储。"
+            : confirm === "discard"
+              ? "当前输入和 Excel 导入内容尚未保存，取消后将无法恢复。"
+              : "只保存当前租户的文案和语言设置覆盖，不会生成 App 可下载资源。"
         }
-        confirmLabel={confirm === "publish" ? "确认发布" : "确认保存"}
+        confirmLabel={
+          confirm === "publish"
+            ? "确认发布"
+            : confirm === "discard"
+              ? "丢弃修改"
+              : "确认保存"
+        }
         loading={saveMutation.isPending || publishMutation.isPending}
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
           if (confirm === "publish") publishMutation.mutate();
-          else saveMutation.mutate();
+          else if (confirm === "discard") {
+            setDraft(null);
+            setOriginal(null);
+            setConfirm(null);
+            setReason("");
+            setNotice("");
+          } else saveMutation.mutate();
         }}
       >
         <div className="dialog-detail-list">
@@ -579,21 +742,4 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       </ConfirmDialog>
     </>
   );
-}
-
-function documentPayload(draft: LocalizationView) {
-  return draft.documents.items
-    .map((item) => ({
-      key: item.key,
-      meta: item.meta,
-      values: Object.fromEntries(
-        Object.entries(item.values)
-          .filter(([, value]) => value.source === "tenant")
-          .map(([code, value]) => [
-            code,
-            value.content.trim() === "" ? null : value.content,
-          ]),
-      ),
-    }))
-    .filter((item) => Object.keys(item.values).length > 0);
 }
