@@ -21,6 +21,7 @@ import {
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   StatusPill,
 } from "../../design-system/components";
@@ -64,7 +65,7 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
         <div>
           <div className="eyebrow">Release operations</div>
           <h1>发布总览</h1>
-          <p>关注当前线上版本、灰度进度和需要人工处理的发布动作。</p>
+          <p>关注当前线上版本和需要人工处理的发布动作。</p>
         </div>
         <Button onClick={() => onNavigate("releases")}>
           <CloudUpload size={16} />
@@ -75,12 +76,12 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
         <Card className="metric">
           <div className="metric-label">线上活跃发布</div>
           <div className="metric-value">{activeCount}</div>
-          <div className="metric-caption">iOS / Android</div>
+          <div className="metric-caption">Android / iOS / HarmonyOS</div>
         </Card>
         <Card className="metric">
-          <div className="metric-label">平均灰度比例</div>
-          <div className="metric-value">{data.rollout}%</div>
-          <div className="metric-caption">基于活跃渠道</div>
+          <div className="metric-label">发布方式</div>
+          <div className="metric-value">全量</div>
+          <div className="metric-caption">校验通过后由管理员确认发布</div>
         </Card>
         <Card className="metric">
           <div className="metric-label">待处理草稿</div>
@@ -104,22 +105,30 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
             </Button>
           </div>
           <div className="card-body">
-            {(["android", "ios"] as const).map((platform) => {
+            {(["android", "ios", "harmony"] as const).map((platform) => {
               const release = data.current[platform];
               return (
                 <div className="version-row" key={platform}>
                   <div className="platform">
                     <div className="platform-icon">
-                      {platform === "android" ? "A" : "i"}
+                      {platform === "android"
+                        ? "A"
+                        : platform === "ios"
+                          ? "i"
+                          : "H"}
                     </div>
                     <div>
                       <strong>
-                        {platform === "android" ? "Android" : "iOS"}
+                        {platform === "android"
+                          ? "Android"
+                          : platform === "ios"
+                            ? "iOS"
+                            : "HarmonyOS"}
                       </strong>
                       {release ? (
                         <div className="version-meta">
                           v{release.version} · build {release.buildNumber} ·{" "}
-                          {release.channel}
+                          {release.platform}
                         </div>
                       ) : (
                         <div className="version-meta">暂无活跃版本</div>
@@ -130,9 +139,7 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
                     <div style={{ minWidth: 150 }}>
                       <StatusPill status={release.status} />
                       <div className="progress" style={{ marginTop: 8 }}>
-                        <span
-                          style={{ width: `${release.rollout.percentage}%` }}
-                        />
+                        <span style={{ width: "100%" }} />
                       </div>
                     </div>
                   ) : (
@@ -166,7 +173,7 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
   );
 }
 
-export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
+export function ReleasesPage({ tenantId }: AdminPageProps) {
   const queryClient = useQueryClient();
   const query = useAdminQuery(["releases", tenantId], () =>
     adminApi.releases(tenantId),
@@ -175,18 +182,13 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [publishedRelease, setPublishedRelease] =
     React.useState<Release | null>(null);
-  const applicationsQuery = useAdminQuery(["applications", tenantId], () =>
-    adminApi.applications(tenantId),
-  );
-  const storageQuery = useAdminQuery(["storage-config", tenantId], () =>
-    adminApi.storageConfig(tenantId),
-  );
-  const [applicationId, setApplicationId] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
+  const [platform, setPlatform] = React.useState("android");
+  const [version, setVersion] = React.useState("");
+  const [buildNumber, setBuildNumber] = React.useState("");
   const [runtimeVersion, setRuntimeVersion] = React.useState("expo:57.0.15");
   const [releaseNotes, setReleaseNotes] =
     React.useState("修复已知问题并优化体验");
-  const [percentage, setPercentage] = React.useState("100");
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [uploadStage, setUploadStage] = React.useState("");
   const [pendingAction, setPendingAction] = React.useState<{
@@ -194,19 +196,26 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
     action: string;
   } | null>(null);
   const [actionReason, setActionReason] = React.useState("");
-  React.useEffect(() => {
-    if (!applicationId && applicationsQuery.data?.items[0]) {
-      setApplicationId(applicationsQuery.data.items[0].id);
-    }
-  }, [applicationId, applicationsQuery.data]);
+  const [actionConfirmOpen, setActionConfirmOpen] = React.useState(false);
+  const [uploadConfirmOpen, setUploadConfirmOpen] = React.useState(false);
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error("请选择 APK 文件");
-      if (!applicationId) throw new Error("请先配置 Android 应用");
+      if (!version.trim() || !buildNumber.trim())
+        throw new Error("请填写版本号和构建号");
       setUploadStage("正在申请安全上传地址");
       setUploadProgress(0);
-      const ticket = await adminApi.createArtifactUpload(tenantId, {
-        applicationId,
+      const ticket = await adminApi.createReleaseUpload(tenantId, {
+        platform,
+        version: version.trim(),
+        buildNumber: Number(buildNumber),
+        runtimeVersion,
+        releaseNotes: {
+          "zh-CN": releaseNotes
+            .split("\n")
+            .map((item) => item.trim())
+            .filter(Boolean),
+        },
         fileName: file.name,
         contentType: file.type || "application/vnd.android.package-archive",
         size: file.size,
@@ -214,63 +223,31 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
       setUploadStage("正在直传对象存储");
       await uploadArtifactFile(ticket.upload, file, setUploadProgress);
       setUploadStage("服务端正在校验包身份与签名");
-      const finalized = await adminApi.finalizeArtifact(
-        tenantId,
-        ticket.artifact.id,
-      );
-      const artifact = finalized.artifact;
-      if (!artifact.versionName || !artifact.versionCode) {
-        throw new Error("服务端未返回完整 APK 版本信息");
-      }
+      await adminApi.finalizeReleaseUpload(tenantId, ticket.release.id);
       const auditReason = releaseNotes.trim().slice(0, 400);
       if (auditReason.length < 3) {
         throw new Error("请填写至少 3 个字符的发布说明");
       }
-      setUploadStage("正在创建发布记录");
-      const created = await adminApi.createRelease(tenantId, {
-        applicationId,
-        platform: "android",
-        version: artifact.versionName,
-        buildNumber: artifact.versionCode,
-        runtimeVersion,
-        channel: "direct",
-        releaseNotes: releaseNotes
-          .split("\n")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        artifactId: artifact.id,
-        rollout: {
-          percentage: Number(percentage),
-          audience: "internal",
-          startsAt: null,
-          stopRule: null,
-        },
-      });
       setUploadStage("正在发布到官网");
-      await adminApi.action(
-        tenantId,
-        created.release.id,
-        "stage",
-        `${auditReason}（APK 校验通过）`,
-      );
       const activated = await adminApi.action(
         tenantId,
-        created.release.id,
-        "activate",
+        ticket.release.id,
+        "publish",
         auditReason,
       );
       return activated.release;
     },
     onSuccess: (release) => {
       setShowCreate(false);
+      setUploadConfirmOpen(false);
       setFile(null);
       setUploadProgress(0);
       setUploadStage("");
       setPublishedRelease(release);
       void queryClient.invalidateQueries({ queryKey: ["releases", tenantId] });
       void queryClient.invalidateQueries({ queryKey: ["overview", tenantId] });
-      void queryClient.invalidateQueries({ queryKey: ["artifacts", tenantId] });
     },
+    onError: () => setUploadConfirmOpen(false),
   });
   const mutation = useMutation({
     mutationFn: async ({
@@ -282,19 +259,17 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
       action: string;
       reason: string;
     }) => {
-      if (action === "publish") {
-        await adminApi.action(tenantId, id, "stage", reason);
-        return adminApi.action(tenantId, id, "activate", reason);
-      }
       return adminApi.action(tenantId, id, action, reason);
     },
     onSuccess: ({ release }) => {
       setPendingAction(null);
+      setActionConfirmOpen(false);
       setActionReason("");
       if (release.status === "active") setPublishedRelease(release);
       void queryClient.invalidateQueries({ queryKey: ["releases", tenantId] });
       void queryClient.invalidateQueries({ queryKey: ["overview", tenantId] });
     },
+    onError: () => setActionConfirmOpen(false),
   });
   if (query.isLoading) return <EmptyState title="正在加载发布列表" />;
   if (query.isError)
@@ -308,13 +283,20 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
     setPendingAction({ id, action });
     setActionReason("");
   };
+  const requestActionConfirmation = () => {
+    if (!pendingAction) return;
+    const reason = actionReason.trim();
+    if (reason.length < 3) return;
+    setActionConfirmOpen(true);
+  };
   const confirmAction = () => {
     if (!pendingAction) return;
     const reason = actionReason.trim();
-    const label = actionLabels[pendingAction.action] ?? pendingAction.action;
     if (reason.length < 3) return;
-    if (!window.confirm(`确认${label}？操作原因将写入审计日志。`)) return;
     mutation.mutate({ ...pendingAction, reason });
+  };
+  const confirmUpload = () => {
+    createMutation.mutate();
   };
   return (
     <>
@@ -334,7 +316,7 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
           上传 APK
         </Button>
       </div>
-      {publishedRelease?.artifact?.downloadUrl && (
+      {publishedRelease && (
         <Card className="publish-success-card">
           <div className="publish-success-icon">
             <CheckCircle2 size={22} />
@@ -347,18 +329,24 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
             </span>
             <div className="publish-link-row">
               <a
-                href={publicApiUrl(publishedRelease.artifact.downloadUrl)}
+                href={publicApiUrl(
+                  `/v1/public/releases/${publishedRelease.id}/download`,
+                )}
                 target="_blank"
                 rel="noreferrer"
               >
-                {publicApiUrl(publishedRelease.artifact.downloadUrl)}
+                {publicApiUrl(
+                  `/v1/public/releases/${publishedRelease.id}/download`,
+                )}
               </a>
               <Button
                 variant="ghost"
                 aria-label="复制安装链接"
                 onClick={() =>
                   void navigator.clipboard?.writeText(
-                    publicApiUrl(publishedRelease.artifact!.downloadUrl!),
+                    publicApiUrl(
+                      `/v1/public/releases/${publishedRelease.id}/download`,
+                    ),
                   )
                 }
               >
@@ -367,7 +355,9 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
               </Button>
               <a
                 className="icon-link"
-                href={publicApiUrl(publishedRelease.artifact.downloadUrl)}
+                href={publicApiUrl(
+                  `/v1/public/releases/${publishedRelease.id}/download`,
+                )}
                 target="_blank"
                 rel="noreferrer"
                 aria-label="打开安装链接"
@@ -381,168 +371,150 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
       {showCreate && (
         <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-header">
-            <h2>发布 Android APK</h2>
+            <h2>上传安装包</h2>
             <Button variant="ghost" onClick={() => setShowCreate(false)}>
               取消
             </Button>
           </div>
           <div className="card-body">
-            {!storageQuery.data?.configured ||
-            (applicationsQuery.data?.items.length ?? 0) === 0 ? (
-              <div className="prerequisite-panel">
-                <ShieldCheck size={20} />
+            <div className="release-upload-grid">
+              <div className="release-identity-note">
+                <CheckCircle2 size={17} />
                 <div>
-                  <strong>首次使用需要完成一次高级设置</strong>
+                  <strong>当前租户由访问域名自动识别</strong>
+                  <span>发布记录、文件信息和校验结果统一保存在版本记录中</span>
+                </div>
+              </div>
+              <div className="form-grid form-grid-3">
+                <label className="form-field">
+                  <span>平台</span>
+                  <select
+                    className="select"
+                    value={platform}
+                    onChange={(event) => setPlatform(event.target.value)}
+                  >
+                    <option value="android">Android</option>
+                    <option value="ios">iOS</option>
+                    <option value="harmony">HarmonyOS</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>版本号</span>
+                  <input
+                    className="input"
+                    placeholder="1.2.0"
+                    value={version}
+                    onChange={(event) => setVersion(event.target.value)}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>构建号</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    placeholder="120"
+                    value={buildNumber}
+                    onChange={(event) => setBuildNumber(event.target.value)}
+                  />
+                </label>
+              </div>
+              <label className="form-field">
+                <span>{platform === "android" ? "APK 安装包" : "安装包"}</span>
+                <input
+                  className="input file-input"
+                  type="file"
+                  aria-label={platform === "android" ? "APK 安装包" : "安装包"}
+                  accept={
+                    platform === "android"
+                      ? ".apk,application/vnd.android.package-archive"
+                      : undefined
+                  }
+                  disabled={createMutation.isPending}
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                />
+                <small>
+                  {platform === "android"
+                    ? "Android APK 会额外校验 versionName、versionCode 和签名结构"
+                    : "服务端会校验文件大小、哈希与版本身份"}
+                </small>
+              </label>
+              <label className="form-field release-notes-field">
+                <span>发布说明</span>
+                <textarea
+                  className="input textarea"
+                  placeholder="例如：修复行情刷新问题，优化钱包连接体验"
+                  value={releaseNotes}
+                  disabled={createMutation.isPending}
+                  onChange={(event) => setReleaseNotes(event.target.value)}
+                />
+              </label>
+              <div className="upload-summary">
+                <FileArchive size={22} />
+                <div>
+                  <strong>{file?.name ?? "尚未选择 APK"}</strong>
                   <p>
-                    {!storageQuery.data?.configured
-                      ? "请先配置对象存储，后续 APK 会自动上传并校验。"
-                      : "请先绑定 Android 应用身份，后续会自动匹配签名。"}
+                    {file
+                      ? formatBytes(file.size)
+                      : "文件将直接上传到当前项目的对象存储"}
                   </p>
                 </div>
                 <Button
-                  variant="ghost"
-                  onClick={() => onNavigate("distribution")}
+                  disabled={
+                    createMutation.isPending ||
+                    !file ||
+                    releaseNotes.trim().length < 3 ||
+                    !version.trim() ||
+                    Number(buildNumber) < 1
+                  }
+                  onClick={() => {
+                    setUploadConfirmOpen(true);
+                  }}
                 >
-                  打开高级设置
+                  <CloudUpload size={16} />
+                  校验并发布到官网
                 </Button>
               </div>
-            ) : (
-              <div className="release-upload-grid">
-                <div className="release-identity-note">
-                  <CheckCircle2 size={17} />
+              {createMutation.isPending && (
+                <div className="upload-progress-panel">
                   <div>
-                    <strong>
-                      已绑定应用：
-                      {applicationsQuery.data?.items.find(
-                        (application) => application.id === applicationId,
-                      )?.name ?? applicationId}
-                    </strong>
-                    <span>
-                      版本号、packageName 和签名证书均由服务端从 APK 自动校验
-                    </span>
+                    <span>{uploadStage}</span>
+                    <strong>{uploadProgress}%</strong>
+                  </div>
+                  <div className="progress">
+                    <span style={{ width: `${uploadProgress}%` }} />
                   </div>
                 </div>
-                <label className="form-field">
-                  <span>APK 安装包</span>
-                  <input
-                    className="input file-input"
-                    type="file"
-                    accept=".apk,application/vnd.android.package-archive"
-                    disabled={createMutation.isPending}
-                    onChange={(event) =>
-                      setFile(event.target.files?.[0] ?? null)
-                    }
-                  />
-                  <small>最大尺寸由服务端控制；版本号与签名均从 APK 读取</small>
-                </label>
-                <label className="form-field release-notes-field">
-                  <span>发布说明</span>
-                  <textarea
-                    className="input textarea"
-                    placeholder="例如：修复行情刷新问题，优化钱包连接体验"
-                    value={releaseNotes}
-                    disabled={createMutation.isPending}
-                    onChange={(event) => setReleaseNotes(event.target.value)}
-                  />
-                </label>
-                <div className="upload-summary">
-                  <FileArchive size={22} />
-                  <div>
-                    <strong>{file?.name ?? "尚未选择 APK"}</strong>
-                    <p>
-                      {file
-                        ? formatBytes(file.size)
-                        : "文件将直接上传到当前项目的对象存储"}
-                    </p>
-                  </div>
-                  <Button
-                    disabled={
-                      createMutation.isPending ||
-                      !file ||
-                      !applicationId ||
-                      releaseNotes.trim().length < 3 ||
-                      Number(percentage) < 1 ||
-                      Number(percentage) > 100
-                    }
-                    onClick={() => {
-                      if (
-                        !window.confirm(
-                          "确认上传并发布到官网？服务端会校验 APK 签名、版本和应用身份。",
-                        )
-                      ) {
-                        return;
+              )}
+              <details
+                className="advanced-release-options"
+                open={advancedOpen}
+                onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+              >
+                <summary>高级选项</summary>
+                <div className="form-grid form-grid-3">
+                  <label className="form-field">
+                    <span>Runtime Version</span>
+                    <input
+                      className="input"
+                      value={runtimeVersion}
+                      disabled={createMutation.isPending}
+                      onChange={(event) =>
+                        setRuntimeVersion(event.target.value)
                       }
-                      createMutation.mutate();
-                    }}
-                  >
-                    <CloudUpload size={16} />
-                    校验并发布到官网
-                  </Button>
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>发布模式</span>
+                    <input
+                      className="input"
+                      value="校验通过后全量发布"
+                      disabled
+                    />
+                  </label>
                 </div>
-                {createMutation.isPending && (
-                  <div className="upload-progress-panel">
-                    <div>
-                      <span>{uploadStage}</span>
-                      <strong>{uploadProgress}%</strong>
-                    </div>
-                    <div className="progress">
-                      <span style={{ width: `${uploadProgress}%` }} />
-                    </div>
-                  </div>
-                )}
-                <details
-                  className="advanced-release-options"
-                  open={advancedOpen}
-                  onToggle={(event) =>
-                    setAdvancedOpen(event.currentTarget.open)
-                  }
-                >
-                  <summary>高级选项</summary>
-                  <div className="form-grid form-grid-3">
-                    <label className="form-field">
-                      <span>Android 应用</span>
-                      <select
-                        className="select"
-                        value={applicationId}
-                        onChange={(event) =>
-                          setApplicationId(event.target.value)
-                        }
-                        disabled={createMutation.isPending}
-                      >
-                        {applicationsQuery.data?.items.map((application) => (
-                          <option value={application.id} key={application.id}>
-                            {application.name} · {application.packageName}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="form-field">
-                      <span>Runtime Version</span>
-                      <input
-                        className="input"
-                        value={runtimeVersion}
-                        disabled={createMutation.isPending}
-                        onChange={(event) =>
-                          setRuntimeVersion(event.target.value)
-                        }
-                      />
-                    </label>
-                    <label className="form-field">
-                      <span>发布比例</span>
-                      <input
-                        className="input"
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={percentage}
-                        disabled={createMutation.isPending}
-                        onChange={(event) => setPercentage(event.target.value)}
-                      />
-                    </label>
-                  </div>
-                </details>
-              </div>
-            )}
+              </details>
+            </div>
             {createMutation.isError && (
               <div className="error-banner" style={{ marginTop: 15 }}>
                 创建失败：{createMutation.error.message}
@@ -565,6 +537,7 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
               variant="ghost"
               onClick={() => {
                 setPendingAction(null);
+                setActionConfirmOpen(false);
                 setActionReason("");
               }}
             >
@@ -586,10 +559,9 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                   pendingAction.action === "rollback" ? "danger" : "primary"
                 }
                 disabled={actionReason.trim().length < 3 || mutation.isPending}
-                onClick={confirmAction}
+                onClick={requestActionConfirmation}
               >
-                确认
-                {actionLabels[pendingAction.action] ?? pendingAction.action}
+                继续确认
               </Button>
             </div>
             {mutation.isError && (
@@ -600,6 +572,42 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
           </div>
         </Card>
       )}
+      <ConfirmDialog
+        open={actionConfirmOpen && pendingAction !== null}
+        title={`确认${pendingAction ? (actionLabels[pendingAction.action] ?? pendingAction.action) : "操作"}？`}
+        description="操作原因将与操作者、请求 ID 一起写入追加式审计日志。"
+        confirmLabel={
+          pendingAction
+            ? `确认${actionLabels[pendingAction.action] ?? pendingAction.action}`
+            : "确认操作"
+        }
+        tone={pendingAction?.action === "rollback" ? "danger" : "default"}
+        loading={mutation.isPending}
+        onCancel={() => setActionConfirmOpen(false)}
+        onConfirm={confirmAction}
+      >
+        <div className="dialog-detail-list">
+          <span>操作原因：{actionReason.trim() || "未填写"}</span>
+          <span>该动作由服务端状态机最终校验</span>
+        </div>
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={uploadConfirmOpen}
+        title="上传并发布到官网？"
+        description="服务端将校验文件、版本、平台信息和安装包身份，校验通过后直接生成官网安装链接。"
+        confirmLabel="确认发布"
+        loading={createMutation.isPending}
+        onCancel={() => setUploadConfirmOpen(false)}
+        onConfirm={confirmUpload}
+      >
+        <div className="dialog-detail-list">
+          <span>平台：{platform}</span>
+          <span>
+            版本：{version || "未填写"} · build {buildNumber || "-"}
+          </span>
+          <span>文件：{file?.name || "未选择"}</span>
+        </div>
+      </ConfirmDialog>
       <Card className="table-wrap">
         <div className="card-header">
           <div>
@@ -642,7 +650,7 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                   </td>
                   <td>
                     {release.platform}
-                    <div className="muted">{release.channel}</div>
+                    <div className="muted">{release.platform}</div>
                   </td>
                   <td>
                     <StatusPill status={release.status} />
@@ -656,11 +664,12 @@ export function ReleasesPage({ tenantId, onNavigate }: AdminPageProps) {
                     })}
                   </td>
                   <td>
-                    {release.status === "active" &&
-                    release.artifact?.downloadUrl ? (
+                    {release.status === "active" ? (
                       <a
                         className="table-link"
-                        href={publicApiUrl(release.artifact.downloadUrl)}
+                        href={publicApiUrl(
+                          `/v1/public/releases/${release.id}/download`,
+                        )}
                         target="_blank"
                         rel="noreferrer"
                       >

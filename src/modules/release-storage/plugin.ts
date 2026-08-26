@@ -3,10 +3,10 @@ import type { AdminPlugin } from "../../plugin-system/types";
 import { DistributionSettingsPage } from "./pages";
 
 export const distributionSettingsPlugin: AdminPlugin = {
-  id: "distribution-settings",
-  label: "系统设置",
+  id: "release-storage",
+  label: "发布基础设施",
   icon: "cloud",
-  navigation: [{ id: "distribution", label: "高级设置", icon: "cloud" }],
+  navigation: [{ id: "distribution", label: "发布存储", icon: "cloud" }],
   pages: { distribution: DistributionSettingsPage },
 };
 

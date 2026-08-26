@@ -2,36 +2,24 @@ import { z } from "zod";
 
 const releaseSchema = z.object({
   id: z.string(),
-  applicationId: z.string(),
-  platform: z.enum(["android", "ios"]),
+  platform: z.enum(["android", "ios", "harmony"]),
   version: z.string(),
   buildNumber: z.number(),
   runtimeVersion: z.string(),
-  channel: z.enum(["store", "direct", "mdm", "ota"]),
   status: z.string(),
-  releaseNotes: z.array(z.string()),
-  artifact: z
-    .object({
-      id: z.string(),
-      fileName: z.string(),
-      downloadUrl: z.string().nullable(),
-      size: z.number(),
-      sha256: z.string(),
-      signingFingerprint: z.string().nullable(),
-      minOsVersion: z.string(),
-    })
-    .nullable(),
-  rollout: z.object({
-    percentage: z.number(),
-    audience: z.string(),
-    startsAt: z.string().nullable(),
-    stopRule: z.string().nullable(),
-  }),
+  releaseNotes: z.record(z.string(), z.array(z.string())),
+  fileName: z.string().nullable().optional(),
+  contentType: z.string().nullable().optional(),
+  expectedSize: z.number().nullable().optional(),
+  fileSize: z.number().nullable().optional(),
+  sha256: z.string().nullable().optional(),
+  fileMetadata: z.record(z.string(), z.unknown()).optional(),
+  rejectionReason: z.string().nullable().optional(),
+  verifiedAt: z.string().nullable().optional(),
+  publishedAt: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  activatedAt: z.string().nullable(),
   lastAction: z.string().nullable(),
-  artifactId: z.string().nullable().optional(),
 });
 export type Release = z.infer<typeof releaseSchema>;
 const listSchema = z.object({
@@ -44,9 +32,9 @@ const overviewSchema = z.object({
   current: z.object({
     android: releaseSchema.nullable(),
     ios: releaseSchema.nullable(),
+    harmony: releaseSchema.nullable(),
   }),
   counts: z.record(z.string(), z.number()),
-  rollout: z.number(),
   signals: z.object({
     crashFreeSessions: z.number().nullable(),
     updateSuccessRate: z.number().nullable(),
@@ -171,70 +159,44 @@ const tenantSchema = z.object({
 });
 export type Tenant = z.infer<typeof tenantSchema>;
 
-const applicationSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  platform: z.literal("android"),
-  packageName: z.string(),
-  expectedSignerSha256: z.string().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
-export type ManagedApplication = z.infer<typeof applicationSchema>;
-
-const storageConfigSchema = z.object({
+export const releaseStorageSchema = z.object({
   configured: z.boolean(),
   version: z.number().int().nonnegative(),
-  provider: z.enum(["s3", "r2", "minio"]).optional(),
-  endpoint: z.string().nullable().optional(),
-  region: z.string().optional(),
-  bucket: z.string().optional(),
-  objectPrefix: z.string().optional(),
-  forcePathStyle: z.boolean().optional(),
-  publicBaseUrl: z.string().nullable().optional(),
-  accessKeyHint: z.string().nullable().optional(),
+  provider: z.enum(["s3", "r2", "minio"]).nullable(),
+  endpoint: z.string().nullable(),
+  region: z.string(),
+  bucket: z.string(),
+  objectPrefix: z.string(),
+  publicBaseUrl: z.string().nullable(),
+  forcePathStyle: z.boolean(),
+  accessKeyHint: z.string().nullable(),
   credentialsConfigured: z.boolean(),
   sessionTokenConfigured: z.boolean(),
-  updatedBy: z.string().optional(),
-  updatedAt: z.string().optional(),
+  inherited: z.boolean(),
+  updatedBy: z.string(),
+  updatedAt: z.string().nullable(),
 });
-export type StorageConfig = z.infer<typeof storageConfigSchema>;
+export type ReleaseStorage = z.infer<typeof releaseStorageSchema>;
 
-const artifactSchema = z.object({
-  id: z.string(),
-  applicationId: z.string(),
-  fileName: z.string(),
-  contentType: z.string(),
-  expectedSize: z.number(),
-  size: z.number().nullable(),
-  sha256: z.string().nullable(),
-  packageName: z.string().nullable(),
-  versionName: z.string().nullable(),
-  versionCode: z.number().nullable(),
-  minSdk: z.number().nullable(),
-  minOsVersion: z.string(),
-  signerSha256: z.string().nullable(),
-  signingFingerprint: z.string().nullable(),
-  signingScheme: z.number().nullable(),
-  status: z.enum(["pending", "uploaded", "verified", "rejected"]),
-  rejectionReason: z.string().nullable(),
-  verifiedAt: z.string().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  downloadUrl: z.string().nullable(),
+const uploadSchema = z.object({
+  method: z.literal("PUT"),
+  url: z.string(),
+  headers: z.record(z.string(), z.string()),
+  expiresAt: z.string(),
 });
-export type Artifact = z.infer<typeof artifactSchema>;
 
-const uploadTicketSchema = z.object({
-  artifact: artifactSchema,
-  upload: z.object({
-    method: z.literal("PUT"),
-    url: z.string(),
-    headers: z.record(z.string(), z.string()),
-    expiresAt: z.string(),
+const simplifiedReleaseUploadSchema = z.object({
+  release: z.object({
+    id: z.string(),
+    platform: z.enum(["android", "ios", "harmony"]),
+    version: z.string(),
+    buildNumber: z.number(),
+    status: z.string(),
+    releaseNotes: z.record(z.string(), z.unknown()),
+    objectKey: z.string(),
   }),
+  upload: uploadSchema,
 });
-export type UploadTicket = z.infer<typeof uploadTicketSchema>;
 
 export class ApiError extends Error {
   constructor(
@@ -292,35 +254,57 @@ export const authApi = {
 };
 
 export const adminApi = {
-  tenants: () =>
-    request("/v1/admin/tenants", z.object({ items: z.array(tenantSchema) })),
-  createTenant: (payload: unknown) =>
-    request("/v1/admin/tenants", z.object({ tenant: tenantSchema }), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  overview: (tenantId: string) =>
-    request(tenantPath(tenantId, "/overview"), overviewSchema),
-  releases: (tenantId: string) =>
-    request(tenantPath(tenantId, "/releases"), listSchema),
-  createRelease: (tenantId: string, payload: unknown) =>
-    request(
-      tenantPath(tenantId, "/releases"),
-      z.object({ release: releaseSchema }),
+  currentTenant: () =>
+    request("/v1/admin/tenant", z.object({ tenant: tenantSchema })),
+  overview: (tenantId: string) => {
+    void tenantId;
+    return request("/v1/admin/overview", overviewSchema);
+  },
+  releases: (tenantId: string) => {
+    void tenantId;
+    return request("/v1/admin/releases", listSchema);
+  },
+  createReleaseUpload: (tenantId: string, payload: unknown) => {
+    void tenantId;
+    return request(
+      "/v1/admin/releases/uploads",
+      simplifiedReleaseUploadSchema,
       {
         method: "POST",
         body: JSON.stringify(payload),
       },
-    ),
-  config: (tenantId: string) =>
-    request(tenantPath(tenantId, "/app-config"), configViewSchema),
+    );
+  },
+  finalizeReleaseUpload: (tenantId: string, releaseId: string) => {
+    void tenantId;
+    return request(
+      `/v1/admin/releases/${encodeURIComponent(releaseId)}/finalize`,
+      z.object({
+        release: z.object({
+          id: z.string(),
+          platform: z.string(),
+          status: z.literal("verified"),
+          fileName: z.string(),
+          fileSize: z.number(),
+          sha256: z.string(),
+          metadata: z.record(z.string(), z.unknown()),
+        }),
+      }),
+      { method: "POST", body: "{}" },
+    );
+  },
+  config: (tenantId: string) => {
+    void tenantId;
+    return request("/v1/admin/app-config", configViewSchema);
+  },
   saveConfig: (
     tenantId: string,
     config: ManagedAppConfig,
     expectedVersion: number,
     reason: string,
-  ) =>
-    request(tenantPath(tenantId, "/app-config"), configSaveSchema, {
+  ) => {
+    void tenantId;
+    return request("/v1/admin/app-config", configSaveSchema, {
       method: "PATCH",
       body: JSON.stringify({
         config,
@@ -328,56 +312,42 @@ export const adminApi = {
         reason,
         confirm: true,
       }),
-    }),
-  audits: (tenantId: string) =>
-    request(
-      tenantPath(tenantId, "/audit-events"),
+    });
+  },
+  audits: (tenantId: string) => {
+    void tenantId;
+    return request(
+      "/v1/admin/audit-events",
       z.object({
         items: z.array(auditSchema),
         nextCursor: z.string().nullable(),
         hasMore: z.boolean(),
       }),
-    ),
-  action: (tenantId: string, id: string, action: string, reason: string) =>
-    request(
-      tenantPath(tenantId, `/releases/${encodeURIComponent(id)}/${action}`),
+    );
+  },
+  action: (tenantId: string, id: string, action: string, reason: string) => {
+    void tenantId;
+    return request(
+      `/v1/admin/releases/${encodeURIComponent(id)}/${action}`,
       z.object({ release: releaseSchema }),
       { method: "POST", body: JSON.stringify({ reason, confirm: true }) },
-    ),
-  applications: (tenantId: string) =>
-    request(
-      tenantPath(tenantId, "/applications"),
-      z.object({ items: z.array(applicationSchema) }),
-    ),
-  createApplication: (tenantId: string, payload: unknown) =>
-    request(
-      tenantPath(tenantId, "/applications"),
-      z.object({ application: applicationSchema }),
-      { method: "POST", body: JSON.stringify(payload) },
-    ),
-  updateApplication: (
-    tenantId: string,
-    applicationId: string,
-    payload: unknown,
-  ) =>
-    request(
-      tenantPath(
-        tenantId,
-        `/applications/${encodeURIComponent(applicationId)}`,
-      ),
-      z.object({ application: applicationSchema }),
-      { method: "PUT", body: JSON.stringify(payload) },
-    ),
-  storageConfig: (tenantId: string) =>
-    request(tenantPath(tenantId, "/storage-config"), storageConfigSchema),
-  saveStorageConfig: (tenantId: string, payload: unknown) =>
-    request(tenantPath(tenantId, "/storage-config"), storageConfigSchema, {
+    );
+  },
+  releaseStorage: (tenantId: string) => {
+    void tenantId;
+    return request("/v1/admin/release-storage", releaseStorageSchema);
+  },
+  saveReleaseStorage: (tenantId: string, payload: unknown) => {
+    void tenantId;
+    return request("/v1/admin/release-storage", releaseStorageSchema, {
       method: "PUT",
       body: JSON.stringify(payload),
-    }),
-  testStorageConfig: (tenantId: string) =>
-    request(
-      tenantPath(tenantId, "/storage-config/test"),
+    });
+  },
+  testReleaseStorage: (tenantId: string) => {
+    void tenantId;
+    return request(
+      "/v1/admin/release-storage/test",
       z.object({
         ok: z.literal(true),
         provider: z.string(),
@@ -385,34 +355,8 @@ export const adminApi = {
         checkedAt: z.string(),
       }),
       { method: "POST", body: "{}" },
-    ),
-  artifacts: (tenantId: string) =>
-    request(
-      tenantPath(tenantId, "/artifacts"),
-      z.object({ items: z.array(artifactSchema) }),
-    ),
-  createArtifactUpload: (
-    tenantId: string,
-    payload: {
-      applicationId: string;
-      fileName: string;
-      contentType: string;
-      size: number;
-    },
-  ) =>
-    request(tenantPath(tenantId, "/artifacts/uploads"), uploadTicketSchema, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  finalizeArtifact: (tenantId: string, artifactId: string) =>
-    request(
-      tenantPath(
-        tenantId,
-        `/artifacts/${encodeURIComponent(artifactId)}/finalize`,
-      ),
-      z.object({ artifact: artifactSchema }),
-      { method: "POST", body: "{}" },
-    ),
+    );
+  },
 };
 
 export function publicApiUrl(path: string): string {
@@ -420,12 +364,8 @@ export function publicApiUrl(path: string): string {
   return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function tenantPath(tenantId: string, suffix: string): string {
-  return `/v1/admin/tenants/${encodeURIComponent(tenantId)}${suffix}`;
-}
-
 export function uploadArtifactFile(
-  ticket: UploadTicket["upload"],
+  ticket: z.infer<typeof uploadSchema>,
   file: File,
   onProgress: (percentage: number) => void,
 ): Promise<void> {

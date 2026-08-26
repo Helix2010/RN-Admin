@@ -13,10 +13,7 @@ const apiMocks = vi.hoisted(() => ({
   releases: vi.fn(),
   config: vi.fn(),
   audits: vi.fn(),
-  tenants: vi.fn(),
-  applications: vi.fn(),
-  storageConfig: vi.fn(),
-  artifacts: vi.fn(),
+  currentTenant: vi.fn(),
 }));
 
 vi.mock("../core/api", () => ({
@@ -37,10 +34,7 @@ vi.mock("../core/api", () => ({
     releases: apiMocks.releases,
     config: apiMocks.config,
     audits: apiMocks.audits,
-    tenants: apiMocks.tenants,
-    applications: apiMocks.applications,
-    storageConfig: apiMocks.storageConfig,
-    artifacts: apiMocks.artifacts,
+    currentTenant: apiMocks.currentTenant,
   },
 }));
 
@@ -59,29 +53,20 @@ describe("App sidebar actions", () => {
       method: "session",
     });
     apiMocks.logout.mockResolvedValue({ authenticated: false });
-    apiMocks.tenants.mockResolvedValue({
-      items: [
-        {
-          id: "tenant-default",
-          slug: "default",
-          name: "Default tenant",
-          status: "active",
-          createdAt: "2026-08-25T00:00:00Z",
-          updatedAt: "2026-08-25T00:00:00Z",
-        },
-      ],
+    apiMocks.currentTenant.mockResolvedValue({
+      tenant: {
+        id: "tenant-default",
+        slug: "default",
+        name: "Default tenant",
+        status: "active",
+        createdAt: "2026-08-25T00:00:00Z",
+        updatedAt: "2026-08-25T00:00:00Z",
+      },
     });
     apiMocks.releases.mockResolvedValue({
       items: [],
       nextCursor: null,
       hasMore: false,
-    });
-    apiMocks.applications.mockResolvedValue({ items: [] });
-    apiMocks.storageConfig.mockResolvedValue({
-      configured: false,
-      version: 0,
-      credentialsConfigured: false,
-      sessionTokenConfigured: false,
     });
 
     const queryClient = new QueryClient({

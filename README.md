@@ -12,7 +12,7 @@ pnpm dev
 
 先启动相邻的 RN-Server。默认访问 `http://localhost:5173`。
 
-当前实现通过 RN-Server 登录并使用 HttpOnly 会话，浏览器构建不包含长期管理密钥。管理员可显式切换租户，独立维护 S3/R2/MinIO 配置、Android package 与签名指纹；APK 直传对象存储后由服务端校验，再创建 Direct Release。发布、审计、移动配置和 Artifact 元数据由 MySQL 持久化，生产环境通过 Caddy 提供 HTTPS。当前阶段不加入 RBAC 与双人审批；telemetry provider 仍需后续接入。
+当前实现通过 RN-Server 登录并使用 HttpOnly 会话，浏览器构建不包含长期管理密钥。租户由管理端请求域名自动解析，不再由页面切换或客户端参数决定。发布页将版本、文件对象、校验结果和发布状态统一维护在 `app_releases`：安装包直传对象存储，服务端计算哈希并校验 Android 身份后即可生成官网安装链接。发布、审计和移动配置由 MySQL 持久化，生产环境通过 Caddy 提供 HTTPS。当前阶段不加入 RBAC 与双人审批；telemetry provider 仍需后续接入。
 
 ## 目录
 
@@ -20,5 +20,5 @@ pnpm dev
 - `src/modules/release-management`：发布总览、发布列表和状态动作；
 - `src/modules/app-config`：启动配置、国际化、主题与升级策略编辑；
 - `src/modules/audit`：发布操作审计；
-- `src/modules/distribution-settings`：租户、对象存储、应用身份与 Artifact；
+- `src/modules/release-storage`：租户级 S3/R2/MinIO 发布存储配置；
 - `src/design-system`：后台设计令牌和基础组件。

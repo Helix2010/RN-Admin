@@ -20,6 +20,7 @@ import {
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   StatusPill,
 } from "../../design-system/components";
@@ -81,6 +82,7 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
   const [draft, setDraft] = useState<ManagedAppConfig | null>(null);
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "error" | "success";
     message: string;
@@ -102,12 +104,14 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
       setDraft(null);
       setDraftVersion(null);
       setReason("");
+      setConfirmOpen(false);
       setFeedback({
         kind: "success",
         message: `配置已激活，数据库版本为 ${saved.metadata.databaseVersion}。`,
       });
     },
     onError: (error) => {
+      setConfirmOpen(false);
       setFeedback({ kind: "error", message: `保存失败：${error.message}` });
     },
   });
@@ -150,13 +154,10 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
       setFeedback({ kind: "error", message: error });
       return;
     }
-    if (
-      !window.confirm(
-        "确认立即激活这份配置？保存后 RN-App 下一次刷新 bootstrap 即会读取新值。",
-      )
-    ) {
-      return;
-    }
+    setConfirmOpen(true);
+  };
+  const confirmSave = () => {
+    if (!draft || draftVersion === null) return;
     setFeedback(null);
     mutation.mutate({
       config: draft,
@@ -217,6 +218,20 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
       ) : (
         <ConfigSummary data={data} />
       )}
+      <ConfirmDialog
+        open={confirmOpen}
+        title="激活应用配置？"
+        description="保存后 RN-App 下一次刷新 bootstrap 即会读取新值。此操作会写入配置审计日志。"
+        confirmLabel="确认激活"
+        loading={mutation.isPending}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={confirmSave}
+      >
+        <div className="dialog-detail-list">
+          <span>配置版本：{draft?.configVersion ?? "-"}</span>
+          <span>变更原因：{reason.trim() || "未填写"}</span>
+        </div>
+      </ConfirmDialog>
     </>
   );
 }

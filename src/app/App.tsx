@@ -7,11 +7,11 @@ import {
   LayoutDashboard,
   LogOut,
   Settings2,
+  CloudCog,
   Rocket,
   FileClock,
   Moon,
   Sun,
-  CloudCog,
 } from "lucide-react";
 import {
   registerAdminPlugin,
@@ -20,7 +20,7 @@ import {
 import { releaseManagementPlugin } from "../modules/release-management/plugin";
 import { appConfigPlugin } from "../modules/app-config/plugin";
 import { auditPlugin } from "../modules/audit/plugin";
-import { distributionSettingsPlugin } from "../modules/distribution-settings/plugin";
+import { distributionSettingsPlugin } from "../modules/release-storage/plugin";
 import {
   adminApi,
   ApiError,
@@ -56,12 +56,9 @@ export function App() {
     window.localStorage.setItem("rn-admin-theme", theme);
   }, [theme]);
   const [session, setSession] = useState<AdminSession | null>(null);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
   const [tenantLoading, setTenantLoading] = useState(false);
   const [tenantError, setTenantError] = useState("");
-  const [selectedTenantId, setSelectedTenantId] = useState(() =>
-    window.localStorage.getItem("rn-admin-tenant"),
-  );
   const [checkingSession, setCheckingSession] = useState(true);
   useEffect(() => {
     let active = true;
@@ -89,25 +86,18 @@ export function App() {
   }, [queryClient]);
   useEffect(() => {
     if (!session) {
-      setTenants([]);
+      setTenant(null);
       return;
     }
     let active = true;
-    const loadTenants = () => {
+    const loadTenant = () => {
       setTenantLoading(true);
       adminApi
-        .tenants()
-        .then(({ items }) => {
+        .currentTenant()
+        .then(({ tenant: current }) => {
           if (!active) return;
-          setTenants(items);
+          setTenant(current);
           setTenantError("");
-          setSelectedTenantId((current) => {
-            const next = items.some((item) => item.id === current)
-              ? current
-              : (items[0]?.id ?? null);
-            if (next) window.localStorage.setItem("rn-admin-tenant", next);
-            return next;
-          });
         })
         .catch((error: unknown) => {
           if (active) {
@@ -118,11 +108,9 @@ export function App() {
         })
         .finally(() => active && setTenantLoading(false));
     };
-    loadTenants();
-    window.addEventListener("rn-admin:tenants-changed", loadTenants);
+    loadTenant();
     return () => {
       active = false;
-      window.removeEventListener("rn-admin:tenants-changed", loadTenants);
     };
   }, [session]);
 
@@ -148,21 +136,15 @@ export function App() {
       />
     );
   }
-  if (tenantLoading || (!selectedTenantId && !tenantError)) {
+  if (tenantLoading || (!tenant && !tenantError)) {
     return <div className="session-loading">正在加载租户工作区…</div>;
   }
-  if (tenantError || !selectedTenantId) {
+  if (tenantError || !tenant) {
     return (
       <div className="session-loading">
         无法进入租户工作区：{tenantError || "没有可用租户"}
       </div>
     );
-  }
-  const selectedTenant = tenants.find(
-    (tenant) => tenant.id === selectedTenantId,
-  );
-  if (!selectedTenant) {
-    return <div className="session-loading">正在同步租户工作区…</div>;
   }
   const activePlugin = plugins.find((plugin) =>
     Object.hasOwn(plugin.pages, page),
@@ -231,30 +213,7 @@ export function App() {
             <strong>{pageLabel}</strong>
           </div>
           <div className="profile">
-            {tenants.length > 1 ? (
-              <label className="tenant-switcher">
-                <span>项目</span>
-                <select
-                  aria-label="当前项目"
-                  value={selectedTenantId}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setSelectedTenantId(next);
-                    window.localStorage.setItem("rn-admin-tenant", next);
-                    queryClient.clear();
-                    setPage("releases");
-                  }}
-                >
-                  {tenants.map((tenant) => (
-                    <option key={tenant.id} value={tenant.id}>
-                      {tenant.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <span className="project-badge">{selectedTenant.name}</span>
-            )}
+            <span className="project-badge">{tenant.name}</span>
             <button
               className="theme-toggle"
               type="button"
@@ -276,8 +235,8 @@ export function App() {
         <div className="content">
           <Page
             onNavigate={navigate}
-            tenantId={selectedTenant.id}
-            tenantName={selectedTenant.name}
+            tenantId={tenant.id}
+            tenantName={tenant.name}
           />
         </div>
       </main>
