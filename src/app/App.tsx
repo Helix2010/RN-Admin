@@ -10,6 +10,7 @@ import {
   CloudCog,
   Rocket,
   FileClock,
+  Languages,
   Moon,
   Sun,
 } from "lucide-react";
@@ -41,6 +42,7 @@ const iconMap = {
   settings: Settings2,
   audit: FileClock,
   cloud: CloudCog,
+  languages: Languages,
 };
 
 export function App() {

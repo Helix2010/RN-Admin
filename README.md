@@ -19,6 +19,7 @@ pnpm dev
 - `src/plugin-system`：可插拔模块注册协议；
 - `src/modules/release-management`：发布总览、发布列表和状态动作；
 - `src/modules/app-config`：启动配置、国际化、主题与升级策略编辑；
+- `src/modules/app-config/localization-page.tsx`：动态语言设置、租户文案覆盖、Excel 导入导出与语言资源发布；
 - `src/modules/audit`：发布操作审计；
 - `src/modules/release-storage`：租户级 S3/R2/MinIO 发布存储配置；
 - `src/design-system`：后台设计令牌和基础组件。

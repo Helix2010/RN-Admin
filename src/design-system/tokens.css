@@ -219,6 +219,32 @@ button {
   color: var(--text);
   background: var(--hover);
 }
+.language-chip-list {
+  display: flex;
+  align-items: center;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 25px;
+}
+.language-settings-area {
+  border-top: 1px solid var(--line);
+}
+.language-add-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  max-width: 360px;
+}
+.language-sort-input {
+  width: 76px;
+}
+.table-language-code {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-weight: 500;
+}
 .nav-item.active {
   box-shadow: inset 3px 0 var(--brand);
 }

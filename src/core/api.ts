@@ -101,6 +101,56 @@ export const managedAppConfigSchema = z.object({
 });
 export type ManagedAppConfig = z.infer<typeof managedAppConfigSchema>;
 
+const languageResourceSchema = z.object({
+  version: z.string(),
+  objectKey: z.string(),
+  fileUrl: z.string(),
+  sha256: z.string(),
+  size: z.number(),
+  publishedAt: z.string(),
+});
+const languageSettingsSchema = z.object({
+  schemaVersion: z.number(),
+  fallbackLanguage: z.string(),
+  refreshIntervalSeconds: z.number(),
+  languages: z.record(
+    z.string(),
+    z.object({
+      label: z.string(),
+      nativeName: z.string(),
+      enabled: z.boolean(),
+      direction: z.enum(["ltr", "rtl"]),
+      sort: z.number(),
+      source: z.enum(["global", "tenant"]),
+      publishStatus: z.string(),
+      resource: languageResourceSchema.nullable().optional(),
+    }),
+  ),
+});
+const localizationDocumentSchema = z.object({
+  key: z.string(),
+  meta: z.string(),
+  values: z.record(
+    z.string(),
+    z.object({ content: z.string(), source: z.string(), missing: z.boolean() }),
+  ),
+});
+const localizationViewSchema = z.object({
+  settings: languageSettingsSchema,
+  documents: z.object({
+    items: z.array(localizationDocumentSchema),
+    total: z.number(),
+  }),
+  metadata: z.object({
+    globalVersion: z.number(),
+    tenantVersion: z.number(),
+    inherited: z.boolean(),
+    updatedBy: z.string(),
+    updatedAt: z.string().nullable(),
+  }),
+});
+export type LocalizationView = z.infer<typeof localizationViewSchema>;
+
 const configSummarySchema = z.object({
   configVersion: z.string(),
   localization: z.object({
@@ -320,6 +370,58 @@ export const adminApi = {
       }),
     });
   },
+  localization: () => request("/v1/admin/localization", localizationViewSchema),
+  saveLocalizationLanguages: (
+    settings: Pick<
+      LocalizationView["settings"],
+      "fallbackLanguage" | "refreshIntervalSeconds" | "languages"
+    >,
+    expectedVersion: number,
+    reason: string,
+  ) => {
+    const languages = Object.fromEntries(
+      Object.entries(settings.languages).map(([code, value]) => [
+        code,
+        {
+          label: value.label,
+          nativeName: value.nativeName,
+          enabled: value.enabled,
+          direction: value.direction,
+          sort: value.sort,
+        },
+      ]),
+    );
+    return request("/v1/admin/localization/languages", localizationViewSchema, {
+      method: "PUT",
+      body: JSON.stringify({
+        settings: { ...settings, languages },
+        expectedVersion,
+        reason,
+      }),
+    });
+  },
+  saveLocalizationDocuments: (
+    documents: Array<{
+      key: string;
+      meta: string;
+      values: Record<string, string | null>;
+    }>,
+    reason: string,
+  ) =>
+    request("/v1/admin/localization/documents", localizationViewSchema, {
+      method: "PUT",
+      body: JSON.stringify({ documents, reason }),
+    }),
+  publishLocalization: (languages: string[], reason: string) =>
+    request(
+      "/v1/admin/localization/publish",
+      z.object({
+        version: z.string(),
+        languages: z.array(z.string()),
+        localization: localizationViewSchema,
+      }),
+      { method: "POST", body: JSON.stringify({ languages, reason }) },
+    ),
   audits: (tenantId: string) => {
     void tenantId;
     return request(

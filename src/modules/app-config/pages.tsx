@@ -5,10 +5,8 @@ import {
   Edit3,
   Languages,
   Palette,
-  Plus,
   Save,
   Shield,
-  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -22,7 +20,6 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
-  SelectField,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -252,10 +249,7 @@ function ConfigSummary({ data }: { data: AppConfig }) {
           <div className="config-item">
             <Languages size={18} />
             <strong>国际化语言</strong>
-            <span>
-              {data.config.localization.supportedLocales.join(" / ")} · messages{" "}
-              {data.config.localization.messagesVersion}
-            </span>
+            <span>语言类型、租户文案与发布资源由“多语言管理”维护</span>
           </div>
           <div className="config-item">
             <Palette size={18} />
@@ -321,39 +315,6 @@ function ConfigEditor({
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const messageKeys = Object.keys(draft.localization.messages["zh-CN"]).sort();
-
-  const renameMessage = (oldKey: string, newKey: string): boolean => {
-    if (oldKey === newKey) return true;
-    if (!newKey) return false;
-    if (
-      Object.hasOwn(draft.localization.messages["zh-CN"], newKey) ||
-      Object.hasOwn(draft.localization.messages["en-US"], newKey)
-    ) {
-      return false;
-    }
-    onChange((next) => {
-      for (const locale of ["zh-CN", "en-US"] as const) {
-        const value = next.localization.messages[locale][oldKey];
-        delete next.localization.messages[locale][oldKey];
-        next.localization.messages[locale][newKey] = value;
-      }
-    });
-    return true;
-  };
-  const addMessage = () => {
-    let index = 1;
-    let key = `new.message.${index}`;
-    while (Object.hasOwn(draft.localization.messages["zh-CN"], key)) {
-      index += 1;
-      key = `new.message.${index}`;
-    }
-    onChange((next) => {
-      next.localization.messages["zh-CN"][key] = "新文案";
-      next.localization.messages["en-US"][key] = "New message";
-    });
-  };
-
   return (
     <div className="config-editor">
       <Card>
@@ -403,118 +364,6 @@ function ConfigEditor({
               }
             />
           </Field>
-        </div>
-      </Card>
-
-      <Card>
-        <div className="card-header">
-          <div>
-            <h2>国际化文案</h2>
-            <p className="section-caption">
-              两种语言必须保持完全相同的消息 key
-            </p>
-          </div>
-          <Button variant="ghost" type="button" onClick={addMessage}>
-            <Plus size={15} />
-            添加文案
-          </Button>
-        </div>
-        <div className="card-body">
-          <div className="form-grid form-grid-2 config-inline-fields">
-            <Field label="文案版本">
-              <input
-                className="input"
-                value={draft.localization.messagesVersion}
-                onChange={(event) =>
-                  onChange((next) => {
-                    next.localization.messagesVersion = event.target.value;
-                  })
-                }
-              />
-            </Field>
-            <Field label="回退语言">
-              <SelectField
-                value={draft.localization.fallbackLocale}
-                onChange={(event) =>
-                  onChange((next) => {
-                    next.localization.fallbackLocale = event.target.value as
-                      "zh-CN" | "en-US";
-                  })
-                }
-              >
-                <option value="zh-CN">zh-CN</option>
-                <option value="en-US">en-US</option>
-              </SelectField>
-            </Field>
-          </div>
-          <div className="message-table-wrap">
-            <table className="message-table">
-              <thead>
-                <tr>
-                  <th>消息 Key</th>
-                  <th>中文（zh-CN）</th>
-                  <th>English（en-US）</th>
-                  <th aria-label="操作" />
-                </tr>
-              </thead>
-              <tbody>
-                {messageKeys.map((key) => (
-                  <tr key={key}>
-                    <td>
-                      <input
-                        className="input mono"
-                        defaultValue={key}
-                        onBlur={(event) => {
-                          if (!renameMessage(key, event.target.value.trim())) {
-                            event.currentTarget.value = key;
-                          }
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="input"
-                        value={draft.localization.messages["zh-CN"][key]}
-                        onChange={(event) =>
-                          onChange((next) => {
-                            next.localization.messages["zh-CN"][key] =
-                              event.target.value;
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="input"
-                        value={draft.localization.messages["en-US"][key]}
-                        onChange={(event) =>
-                          onChange((next) => {
-                            next.localization.messages["en-US"][key] =
-                              event.target.value;
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <button
-                        className="icon-button danger-icon"
-                        type="button"
-                        aria-label={`删除 ${key}`}
-                        onClick={() =>
-                          onChange((next) => {
-                            delete next.localization.messages["zh-CN"][key];
-                            delete next.localization.messages["en-US"][key];
-                          })
-                        }
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       </Card>
 
@@ -712,12 +561,6 @@ function validateDraft(
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return `请检查 ${issue.path.join(".") || "配置"}：${issue.message}`;
-  }
-  const zhKeys = Object.keys(config.localization.messages["zh-CN"]).sort();
-  const enKeys = Object.keys(config.localization.messages["en-US"]).sort();
-  if (zhKeys.length === 0) return "国际化文案不能为空。";
-  if (zhKeys.join("\n") !== enKeys.join("\n")) {
-    return "中文和英文文案的消息 key 必须完全一致。";
   }
   const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
   if (!semver.test(config.updatePolicy.minSupportedVersion)) {
