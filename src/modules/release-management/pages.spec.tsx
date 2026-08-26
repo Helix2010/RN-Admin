@@ -19,6 +19,10 @@ vi.mock("../../core/api", () => ({
   uploadArtifactFile: apiMocks.uploadArtifactFile,
 }));
 
+vi.mock("qrcode", () => ({
+  default: { toDataURL: vi.fn().mockResolvedValue("data:image/png;base64,qr") },
+}));
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -40,6 +44,42 @@ function renderPage() {
 }
 
 describe("ReleasesPage actions", () => {
+  it("opens a QR code share dialog for an active release", async () => {
+    apiMocks.releases.mockResolvedValue({
+      items: [
+        {
+          id: "release-active",
+          platform: "android",
+          version: "1.0.1",
+          buildNumber: 2,
+          runtimeVersion: "expo:57.0.15",
+          status: "active",
+          releaseNotes: { "zh-CN": ["可扫码测试"] },
+          fileName: "AnyFun-Foundation-1.0.1-build2.apk",
+          createdAt: "2026-08-25T00:00:00Z",
+          updatedAt: "2026-08-25T00:00:00Z",
+          lastAction: "publish",
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "二维码" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "扫码安装" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByDisplayValue(
+        "https://api.example.com/v1/public/releases/release-active/download",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByAltText("1.0.1 build 2 安装二维码")).toBeTruthy();
+  });
+
   it("submits the administrator reason for a verified release", async () => {
     apiMocks.releases.mockResolvedValue({
       items: [

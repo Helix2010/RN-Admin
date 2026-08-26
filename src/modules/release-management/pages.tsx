@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import QRCode from "qrcode";
 import * as React from "react";
 import {
   Activity,
@@ -7,9 +8,12 @@ import {
   CirclePause,
   CloudUpload,
   Copy,
+  Download,
   ExternalLink,
+  QrCode,
   RotateCcw,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import {
   adminApi,
@@ -38,6 +42,13 @@ const actionLabels: Record<string, string> = {
   activate: "恢复发布",
   pause: "暂停",
   rollback: "回滚",
+};
+
+const actionDescriptions: Record<string, string> = {
+  publish: "使该版本成为官网当前下载版本，同平台原活跃版本会转为历史版本。",
+  pause: "停止官网继续分发该版本；安装包和发布记录保留，之后可以再次发布恢复。",
+  rollback:
+    "立即停止该版本分发并标记为已回滚；当前阶段不会自动恢复之前的历史版本。",
 };
 
 export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
@@ -183,6 +194,9 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [publishedRelease, setPublishedRelease] =
     React.useState<Release | null>(null);
+  const [shareRelease, setShareRelease] = React.useState<Release | null>(null);
+  const [qrDataUrl, setQrDataUrl] = React.useState("");
+  const [linkCopied, setLinkCopied] = React.useState(false);
   const [file, setFile] = React.useState<File | null>(null);
   const [platform, setPlatform] = React.useState("android");
   const [version, setVersion] = React.useState("");
@@ -272,6 +286,35 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
     },
     onError: () => setActionConfirmOpen(false),
   });
+  const shareUrl = shareRelease
+    ? publicApiUrl(`/v1/public/releases/${shareRelease.id}/download`)
+    : "";
+  React.useEffect(() => {
+    if (!shareUrl) {
+      setQrDataUrl("");
+      setLinkCopied(false);
+      return;
+    }
+    let cancelled = false;
+    void QRCode.toDataURL(shareUrl, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 240,
+      color: { dark: "#17233f", light: "#ffffff" },
+    }).then((dataUrl) => {
+      if (!cancelled) setQrDataUrl(dataUrl);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [shareUrl]);
+  const copyShareUrl = () => {
+    if (!shareUrl) return;
+    void navigator.clipboard?.writeText(shareUrl).then(() => {
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 1800);
+    });
+  };
   if (query.isLoading) return <EmptyState title="正在加载发布列表" />;
   if (query.isError)
     return (
@@ -368,6 +411,72 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             </div>
           </div>
         </Card>
+      )}
+      {shareRelease && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShareRelease(null);
+          }}
+        >
+          <section
+            className="share-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-dialog-title"
+          >
+            <div className="share-dialog-header">
+              <div>
+                <div className="eyebrow">Share release</div>
+                <h2 id="share-dialog-title">扫码安装</h2>
+                <p>使用手机扫码后，将直接下载该版本 APK。</p>
+              </div>
+              <button
+                className="dialog-close-button"
+                type="button"
+                aria-label="关闭二维码"
+                onClick={() => setShareRelease(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="share-dialog-content">
+              <div className="qr-frame">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt={`${shareRelease.version} build ${shareRelease.buildNumber} 安装二维码`}
+                  />
+                ) : (
+                  <span className="qr-loading">正在生成二维码…</span>
+                )}
+              </div>
+              <div className="share-dialog-details">
+                <strong>
+                  v{shareRelease.version} · build {shareRelease.buildNumber}
+                </strong>
+                <span className="muted">
+                  {shareRelease.fileName ?? "APK 安装包"}
+                </span>
+                <label className="form-field">
+                  <span>安装地址</span>
+                  <input className="input" value={shareUrl} readOnly />
+                </label>
+                <div className="toolbar share-dialog-actions">
+                  <Button variant="ghost" onClick={copyShareUrl}>
+                    <Copy size={14} />
+                    {linkCopied ? "已复制" : "复制链接"}
+                  </Button>
+                  <a className="button button-primary" href={shareUrl}>
+                    <Download size={14} />
+                    直接下载
+                  </a>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
       )}
       {showCreate && (
         <div className="card" style={{ marginBottom: 18 }}>
@@ -513,7 +622,10 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                 确认
                 {actionLabels[pendingAction.action] ?? pendingAction.action}
               </h2>
-              <p>请填写可审计的操作原因，提交后不能从审计记录中删除。</p>
+              <p>
+                {actionDescriptions[pendingAction.action] ??
+                  "请填写可审计的操作原因。"}
+              </p>
             </div>
             <Button
               variant="ghost"
@@ -557,7 +669,11 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
       <ConfirmDialog
         open={actionConfirmOpen && pendingAction !== null}
         title={`确认${pendingAction ? (actionLabels[pendingAction.action] ?? pendingAction.action) : "操作"}？`}
-        description="操作原因将与操作者、请求 ID 一起写入追加式审计日志。"
+        description={
+          pendingAction
+            ? actionDescriptions[pendingAction.action]
+            : "操作原因将写入追加式审计日志。"
+        }
         confirmLabel={
           pendingAction
             ? `确认${actionLabels[pendingAction.action] ?? pendingAction.action}`
@@ -596,6 +712,9 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             <h2>发布记录</h2>
             <p style={{ fontSize: 12, marginTop: 4 }}>
               查看官网当前版本与历史发布结果
+            </p>
+            <p className="release-action-help">
+              暂停：停止该版本继续分发，可再次发布恢复。回滚：停止当前版本并标记为已回滚，当前阶段不会自动恢复历史版本。
             </p>
           </div>
           <div className="toolbar">
@@ -647,17 +766,28 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                   </td>
                   <td>
                     {release.status === "active" ? (
-                      <a
-                        className="table-link"
-                        href={publicApiUrl(
-                          `/v1/public/releases/${release.id}/download`,
-                        )}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <ExternalLink size={14} />
-                        获取链接
-                      </a>
+                      <div className="toolbar">
+                        <Button
+                          variant="ghost"
+                          title="打开二维码和安装链接"
+                          onClick={() => setShareRelease(release)}
+                        >
+                          <QrCode size={14} />
+                          二维码
+                        </Button>
+                        <a
+                          className="icon-link"
+                          href={publicApiUrl(
+                            `/v1/public/releases/${release.id}/download`,
+                          )}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label="打开安装链接"
+                          title="打开安装链接"
+                        >
+                          <ExternalLink size={15} />
+                        </a>
+                      </div>
                     ) : (
                       <span className="muted">发布后生成</span>
                     )}
@@ -687,6 +817,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                         <>
                           <Button
                             variant="ghost"
+                            title="停止官网继续分发，可再次发布恢复"
                             onClick={() => runAction(release.id, "pause")}
                           >
                             <CirclePause size={14} />
@@ -694,6 +825,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                           </Button>
                           <Button
                             variant="danger"
+                            title="停止当前版本并标记为已回滚，不会自动恢复历史版本"
                             onClick={() => runAction(release.id, "rollback")}
                           >
                             <RotateCcw size={14} />
