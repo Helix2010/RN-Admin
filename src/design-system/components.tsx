@@ -1,7 +1,19 @@
-import { useEffect, useId, useRef } from "react";
-import type { ButtonHTMLAttributes, PropsWithChildren, ReactNode } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import type {
+  ButtonHTMLAttributes,
+  PropsWithChildren,
+  ReactNode,
+  SelectHTMLAttributes,
+} from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ShieldCheck, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  FileArchive,
+  ShieldCheck,
+  UploadCloud,
+  X,
+} from "lucide-react";
 
 export function Button({
   children,
@@ -23,6 +35,124 @@ export function Card({
   className = "",
 }: PropsWithChildren<{ className?: string }>) {
   return <section className={`card ${className}`}>{children}</section>;
+}
+
+export function SelectField({
+  label,
+  hint,
+  children,
+  className = "",
+  ...props
+}: PropsWithChildren<
+  SelectHTMLAttributes<HTMLSelectElement> & {
+    label?: string;
+    hint?: string;
+  }
+>) {
+  const generatedId = useId();
+  const id = props.id ?? generatedId;
+  const control = (
+    <>
+      <span className="select-control">
+        <select {...props} id={id}>
+          {children}
+        </select>
+        <ChevronDown size={16} aria-hidden="true" />
+      </span>
+      {hint && <small>{hint}</small>}
+    </>
+  );
+  if (!label) {
+    return <span className={`select-field ${className}`}>{control}</span>;
+  }
+  return (
+    <label className={`form-field select-field ${className}`} htmlFor={id}>
+      <span>{label}</span>
+      {control}
+    </label>
+  );
+}
+
+export function FileDropzone({
+  label,
+  file,
+  accept,
+  hint,
+  disabled = false,
+  onFileChange,
+}: {
+  label: string;
+  file: File | null;
+  accept?: string;
+  hint?: string;
+  disabled?: boolean;
+  onFileChange: (file: File | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const chooseFile = () => {
+    if (!disabled) inputRef.current?.click();
+  };
+  const setFile = (next: File | undefined) => {
+    if (!next || disabled) return;
+    onFileChange(next);
+  };
+  return (
+    <div
+      className={`file-dropzone${dragging ? " is-dragging" : ""}${file ? " has-file" : ""}${disabled ? " is-disabled" : ""}`}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-label={`${label}选择区域`}
+      onClick={chooseFile}
+      onKeyDown={(event) => {
+        if ((event.key === "Enter" || event.key === " ") && !disabled) {
+          event.preventDefault();
+          chooseFile();
+        }
+      }}
+      onDragEnter={(event) => {
+        event.preventDefault();
+        if (!disabled) setDragging(true);
+      }}
+      onDragOver={(event) => event.preventDefault()}
+      onDragLeave={(event) => {
+        if (event.currentTarget === event.target) setDragging(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        setFile(event.dataTransfer.files?.[0]);
+      }}
+    >
+      <input
+        ref={inputRef}
+        className="file-dropzone-input"
+        type="file"
+        aria-label={`${label}文件选择`}
+        accept={accept}
+        disabled={disabled}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => setFile(event.target.files?.[0])}
+      />
+      <span className="file-dropzone-icon" aria-hidden="true">
+        {file ? <FileArchive size={22} /> : <UploadCloud size={22} />}
+      </span>
+      <span className="file-dropzone-copy">
+        <strong>{file ? file.name : `拖拽${label}到这里`}</strong>
+        <small>
+          {file
+            ? `${formatFileSize(file.size)} · 已准备上传`
+            : (hint ?? "或点击选择本地文件")}
+        </small>
+      </span>
+      <span className="file-dropzone-action">选择文件</span>
+    </div>
+  );
+}
+
+function formatFileSize(value: number): string {
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 export function StatusPill({ status }: { status: string }) {
   const labels: Record<string, string> = {

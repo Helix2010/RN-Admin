@@ -22,6 +22,7 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  SelectField,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -432,8 +433,7 @@ function ConfigEditor({
               />
             </Field>
             <Field label="回退语言">
-              <select
-                className="select"
+              <SelectField
                 value={draft.localization.fallbackLocale}
                 onChange={(event) =>
                   onChange((next) => {
@@ -444,7 +444,7 @@ function ConfigEditor({
               >
                 <option value="zh-CN">zh-CN</option>
                 <option value="en-US">en-US</option>
-              </select>
+              </SelectField>
             </Field>
           </div>
           <div className="message-table-wrap">

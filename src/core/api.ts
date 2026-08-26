@@ -183,6 +183,7 @@ const uploadSchema = z.object({
   url: z.string(),
   headers: z.record(z.string(), z.string()),
   expiresAt: z.string(),
+  requiresCredentials: z.boolean().default(false),
 });
 
 const simplifiedReleaseUploadSchema = z.object({
@@ -372,6 +373,7 @@ export function uploadArtifactFile(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(ticket.method, ticket.url);
+    xhr.withCredentials = ticket.requiresCredentials;
     for (const [key, value] of Object.entries(ticket.headers)) {
       xhr.setRequestHeader(key, value);
     }

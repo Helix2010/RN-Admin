@@ -8,6 +8,7 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  SelectField,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -141,8 +142,7 @@ export function DistributionSettingsPage({ tenantId }: AdminPageProps) {
         </div>
         <div className="card-body form-grid form-grid-3">
           <Field label="提供商">
-            <select
-              className="select"
+            <SelectField
               disabled={!editing}
               value={current.provider ?? "s3"}
               onChange={(e) =>
@@ -152,7 +152,7 @@ export function DistributionSettingsPage({ tenantId }: AdminPageProps) {
               <option value="s3">Amazon S3</option>
               <option value="r2">Cloudflare R2</option>
               <option value="minio">MinIO</option>
-            </select>
+            </SelectField>
           </Field>
           <Field label="区域">
             <input

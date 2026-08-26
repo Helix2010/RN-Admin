@@ -103,6 +103,7 @@ describe("ReleasesPage actions", () => {
         url: "https://storage.example/upload",
         headers: { "content-type": "application/vnd.android.package-archive" },
         expiresAt: "2026-08-25T00:15:00Z",
+        requiresCredentials: true,
       },
     });
     apiMocks.uploadArtifactFile.mockResolvedValue(undefined);
@@ -133,7 +134,7 @@ describe("ReleasesPage actions", () => {
     const apk = new File(["signed-apk"], "dex-1.3.0.apk", {
       type: "application/vnd.android.package-archive",
     });
-    await user.upload(screen.getByLabelText("APK 安装包"), apk);
+    await user.upload(screen.getByLabelText("APK 安装包文件选择"), apk);
     await user.click(screen.getByRole("button", { name: "校验并发布到官网" }));
     await user.click(screen.getByRole("button", { name: "确认发布" }));
 

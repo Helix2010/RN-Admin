@@ -8,7 +8,6 @@ import {
   CloudUpload,
   Copy,
   ExternalLink,
-  FileArchive,
   RotateCcw,
   ShieldCheck,
 } from "lucide-react";
@@ -23,6 +22,8 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  FileDropzone,
+  SelectField,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -378,26 +379,17 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
           </div>
           <div className="card-body">
             <div className="release-upload-grid">
-              <div className="release-identity-note">
-                <CheckCircle2 size={17} />
-                <div>
-                  <strong>当前租户由访问域名自动识别</strong>
-                  <span>发布记录、文件信息和校验结果统一保存在版本记录中</span>
-                </div>
-              </div>
               <div className="form-grid form-grid-3">
-                <label className="form-field">
-                  <span>平台</span>
-                  <select
-                    className="select"
-                    value={platform}
-                    onChange={(event) => setPlatform(event.target.value)}
-                  >
-                    <option value="android">Android</option>
-                    <option value="ios">iOS</option>
-                    <option value="harmony">HarmonyOS</option>
-                  </select>
-                </label>
+                <SelectField
+                  label="平台"
+                  value={platform}
+                  disabled={createMutation.isPending}
+                  onChange={(event) => setPlatform(event.target.value)}
+                >
+                  <option value="android">Android</option>
+                  <option value="ios">iOS</option>
+                  <option value="harmony">HarmonyOS</option>
+                </SelectField>
                 <label className="form-field">
                   <span>版本号</span>
                   <input
@@ -419,26 +411,25 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                   />
                 </label>
               </div>
-              <label className="form-field">
+              <div className="form-field">
                 <span>{platform === "android" ? "APK 安装包" : "安装包"}</span>
-                <input
-                  className="input file-input"
-                  type="file"
-                  aria-label={platform === "android" ? "APK 安装包" : "安装包"}
+                <FileDropzone
+                  label={platform === "android" ? "APK 安装包" : "安装包"}
+                  file={file}
                   accept={
                     platform === "android"
                       ? ".apk,application/vnd.android.package-archive"
                       : undefined
                   }
                   disabled={createMutation.isPending}
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  hint={
+                    platform === "android"
+                      ? "支持 APK，服务端会校验版本号、构建号与签名"
+                      : "服务端会校验文件大小、哈希与版本身份"
+                  }
+                  onFileChange={setFile}
                 />
-                <small>
-                  {platform === "android"
-                    ? "Android APK 会额外校验 versionName、versionCode 和签名结构"
-                    : "服务端会校验文件大小、哈希与版本身份"}
-                </small>
-              </label>
+              </div>
               <label className="form-field release-notes-field">
                 <span>发布说明</span>
                 <textarea
@@ -449,16 +440,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                   onChange={(event) => setReleaseNotes(event.target.value)}
                 />
               </label>
-              <div className="upload-summary">
-                <FileArchive size={22} />
-                <div>
-                  <strong>{file?.name ?? "尚未选择 APK"}</strong>
-                  <p>
-                    {file
-                      ? formatBytes(file.size)
-                      : "文件将直接上传到当前项目的对象存储"}
-                  </p>
-                </div>
+              <div className="release-upload-actions">
                 <Button
                   disabled={
                     createMutation.isPending ||
@@ -617,12 +599,12 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             </p>
           </div>
           <div className="toolbar">
-            <select className="select" aria-label="平台">
+            <SelectField aria-label="平台">
               <option>全部平台</option>
-            </select>
-            <select className="select" aria-label="状态">
+            </SelectField>
+            <SelectField aria-label="状态">
               <option>全部状态</option>
-            </select>
+            </SelectField>
           </div>
         </div>
         {releases.length === 0 ? (
@@ -729,9 +711,4 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
       </Card>
     </>
   );
-}
-
-function formatBytes(value: number): string {
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
