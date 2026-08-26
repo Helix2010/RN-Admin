@@ -13,7 +13,12 @@ const releaseSchema = z.object({
   expectedSize: z.number().nullable().optional(),
   fileSize: z.number().nullable().optional(),
   sha256: z.string().nullable().optional(),
-  fileMetadata: z.record(z.string(), z.unknown()).optional(),
+  // Older rejected/uploaded rows may have a SQL NULL metadata value. Treat it
+  // as absent at the API boundary so one legacy row cannot invalidate the list.
+  fileMetadata: z
+    .record(z.string(), z.unknown())
+    .nullish()
+    .transform((value) => value ?? undefined),
   rejectionReason: z.string().nullable().optional(),
   verifiedAt: z.string().nullable().optional(),
   publishedAt: z.string().nullable().optional(),
