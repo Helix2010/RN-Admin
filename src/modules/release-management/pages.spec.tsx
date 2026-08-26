@@ -78,6 +78,7 @@ describe("ReleasesPage actions", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByAltText("1.0.1 build 2 安装二维码")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "回滚" })).toBeNull();
   });
 
   it("submits the administrator reason for a verified release", async () => {

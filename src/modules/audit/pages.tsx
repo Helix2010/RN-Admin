@@ -23,7 +23,7 @@ export function AuditPage({ tenantId }: AdminPageProps) {
         <div>
           <div className="eyebrow">Audit trail</div>
           <h1>审计日志</h1>
-          <p>发布、暂停、回滚等高风险动作的不可变记录。</p>
+          <p>发布、暂停等高风险动作的不可变记录。</p>
         </div>
         <ScrollText color="#74a7ff" />
       </div>

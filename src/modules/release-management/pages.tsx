@@ -11,7 +11,6 @@ import {
   Download,
   ExternalLink,
   QrCode,
-  RotateCcw,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -41,14 +40,11 @@ const actionLabels: Record<string, string> = {
   stage: "预发布",
   activate: "恢复发布",
   pause: "暂停",
-  rollback: "回滚",
 };
 
 const actionDescriptions: Record<string, string> = {
   publish: "使该版本成为官网当前下载版本，同平台原活跃版本会转为历史版本。",
   pause: "停止官网继续分发该版本；安装包和发布记录保留，之后可以再次发布恢复。",
-  rollback:
-    "立即停止该版本分发并标记为已回滚；当前阶段不会自动恢复之前的历史版本。",
 };
 
 export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
@@ -649,9 +645,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             <div className="toolbar action-confirmation-footer">
               <span className="muted">原因会与操作者、请求 ID 一起记录</span>
               <Button
-                variant={
-                  pendingAction.action === "rollback" ? "danger" : "primary"
-                }
+                variant="primary"
                 disabled={actionReason.trim().length < 3 || mutation.isPending}
                 onClick={requestActionConfirmation}
               >
@@ -679,7 +673,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             ? `确认${actionLabels[pendingAction.action] ?? pendingAction.action}`
             : "确认操作"
         }
-        tone={pendingAction?.action === "rollback" ? "danger" : "default"}
+        tone="default"
         loading={mutation.isPending}
         onCancel={() => setActionConfirmOpen(false)}
         onConfirm={confirmAction}
@@ -714,7 +708,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
               查看官网当前版本与历史发布结果
             </p>
             <p className="release-action-help">
-              暂停：停止该版本继续分发，可再次发布恢复。回滚：停止当前版本并标记为已回滚，当前阶段不会自动恢复历史版本。
+              暂停会停止该版本继续分发，安装包和记录仍保留，之后可以再次发布恢复。
             </p>
           </div>
           <div className="toolbar">
@@ -822,14 +816,6 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                           >
                             <CirclePause size={14} />
                             暂停
-                          </Button>
-                          <Button
-                            variant="danger"
-                            title="停止当前版本并标记为已回滚，不会自动恢复历史版本"
-                            onClick={() => runAction(release.id, "rollback")}
-                          >
-                            <RotateCcw size={14} />
-                            回滚
                           </Button>
                         </>
                       )}
