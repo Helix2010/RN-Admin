@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ConfirmDialog } from "./components";
+import { ConfirmDialog, SidePanel } from "./components";
 
 afterEach(() => cleanup());
 
@@ -63,5 +63,26 @@ describe("ConfirmDialog", () => {
       "disabled",
       true,
     );
+  });
+});
+
+describe("SidePanel", () => {
+  it("renders accessible content and closes with Escape", async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <SidePanel
+        open
+        title="添加文案"
+        description="填写 Key 与各语言文案"
+        onClose={onClose}
+      >
+        <input aria-label="文案 Key" />
+      </SidePanel>,
+    );
+
+    expect(screen.getByRole("dialog", { name: "添加文案" })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

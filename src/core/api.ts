@@ -130,9 +130,14 @@ const languageSettingsSchema = z.object({
 const localizationDocumentSchema = z.object({
   key: z.string(),
   meta: z.string(),
+  enabled: z.boolean().default(true),
   values: z.record(
     z.string(),
-    z.object({ content: z.string(), source: z.string(), missing: z.boolean() }),
+    z.object({
+      content: z.string(),
+      source: z.string(),
+      missing: z.boolean(),
+    }),
   ),
 });
 const localizationViewSchema = z.object({
@@ -404,6 +409,8 @@ export const adminApi = {
     documents: Array<{
       key: string;
       meta: string;
+      enabled?: boolean;
+      create?: boolean;
       values: Record<string, string | null>;
     }>,
     reason: string,

@@ -1,12 +1,20 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Languages, Plus, Save, UploadCloud } from "lucide-react";
+import {
+  Languages,
+  Plus,
+  Save,
+  Search,
+  Trash2,
+  UploadCloud,
+} from "lucide-react";
 import { adminApi, type LocalizationView } from "../../core/api";
 import {
   Button,
   Card,
   ConfirmDialog,
   EmptyState,
+  SidePanel,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -27,6 +35,14 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [newLanguageCode, setNewLanguageCode] = useState("");
+  const [documentSearch, setDocumentSearch] = useState("");
+  const [addPanelOpen, setAddPanelOpen] = useState(false);
+  const [newDocumentKey, setNewDocumentKey] = useState("");
+  const [newDocumentMeta, setNewDocumentMeta] = useState("");
+  const [newDocumentValues, setNewDocumentValues] = useState<
+    Record<string, string>
+  >({});
+  const [newDocumentError, setNewDocumentError] = useState("");
   const settingsChanged = Boolean(
     draft &&
     original &&
@@ -117,6 +133,18 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
   const hasUnpublishedDraft = languages.some(
     ([, item]) => item.publishStatus !== "published",
   );
+  const normalizedSearch = documentSearch.trim().toLowerCase();
+  const filteredDocuments = data.documents.items.filter(
+    (item) =>
+      normalizedSearch === "" ||
+      item.key.toLowerCase().includes(normalizedSearch) ||
+      Object.values(item.values).some((value) =>
+        value.content.toLowerCase().includes(normalizedSearch),
+      ),
+  );
+  const originalKeys = new Set(
+    original?.documents.items.map((item) => item.key.toLowerCase()) ?? [],
+  );
   const begin = () => {
     setDraft(structuredClone(query.data));
     setOriginal(structuredClone(query.data));
@@ -139,23 +167,87 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       return next;
     });
   };
-  const addRow = () => {
+  const openAddPanel = () => {
+    setNotice("");
+    setError("");
+    setNewDocumentKey("");
+    setNewDocumentMeta("");
+    setNewDocumentValues(
+      Object.fromEntries(languages.map(([code]) => [code, ""])),
+    );
+    setNewDocumentError("");
+    setAddPanelOpen(true);
+  };
+  const addDocument = () => {
+    const key = newDocumentKey.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]{0,254}$/.test(key)) {
+      setNewDocumentError(
+        "Key 只能包含小写字母、数字、点、下划线或短横线，最长 255 个字符。",
+      );
+      return;
+    }
+    if (
+      data.documents.items.some(
+        (item) => item.key.toLowerCase() === key.toLowerCase(),
+      )
+    ) {
+      setNewDocumentError("该 Key 已存在，请直接编辑已有文案。");
+      return;
+    }
+    if (!newDocumentValues[data.settings.fallbackLanguage]?.trim()) {
+      setNewDocumentError(
+        `请至少填写回退语言 ${data.settings.fallbackLanguage} 的文案。`,
+      );
+      return;
+    }
+    setDraft((current) => {
+      if (!current) return current;
+      const next = structuredClone(current);
+      next.documents.items.push({
+        key,
+        meta: newDocumentMeta.trim(),
+        enabled: true,
+        values: Object.fromEntries(
+          languages.map(([code]) => {
+            const content = newDocumentValues[code]?.trim() ?? "";
+            return [
+              code,
+              {
+                content,
+                source: content ? "tenant" : "missing",
+                missing: content === "",
+              },
+            ];
+          }),
+        ),
+      });
+      next.documents.total = next.documents.items.length;
+      return next;
+    });
+    setAddPanelOpen(false);
+    setDocumentSearch(key);
+    setNotice(`文案 ${key} 已加入当前草稿，尚未写入数据库。`);
+  };
+  const removeNewDocument = (key: string) => {
+    setDraft((current) => {
+      if (!current) return current;
+      const next = structuredClone(current);
+      next.documents.items = next.documents.items.filter(
+        (item) => item.key !== key,
+      );
+      next.documents.total = next.documents.items.length;
+      return next;
+    });
+    setNotice(`已从当前草稿移除 ${key}。`);
+  };
+  const toggleDocument = (key: string, enabled: boolean) => {
     setNotice("");
     setError("");
     setDraft((current) => {
       if (!current) return current;
       const next = structuredClone(current);
-      const key = `new.message.${next.documents.items.length + 1}`;
-      next.documents.items.push({
-        key,
-        meta: "",
-        values: Object.fromEntries(
-          languages.map(([code]) => [
-            code,
-            { content: "", source: "tenant", missing: true },
-          ]),
-        ),
-      });
+      const item = next.documents.items.find((entry) => entry.key === key);
+      if (item) item.enabled = enabled;
       return next;
     });
   };
@@ -212,6 +304,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       Object.fromEntries([
         ["key", item.key],
         ["meta", item.meta],
+        ["enabled", item.enabled],
         ...languages.map(([code]) => [code, item.values[code]?.content ?? ""]),
       ]),
     );
@@ -233,23 +326,45 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         if (!sheet) throw new Error("empty workbook");
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
-        const importedRows = rows.filter(
-          (row) => String(row.key ?? "").trim().length > 0,
-        ).length;
+        const normalizedRows: Array<Record<string, unknown>> = rows
+          .filter((row) => String(row.key ?? "").trim().length > 0)
+          .map((row) => ({
+            ...row,
+            key: String(row.key).trim().toLowerCase(),
+          }));
+        const seen = new Set<string>();
+        for (const row of normalizedRows) {
+          const key = String(row.key);
+          if (!/^[a-z0-9][a-z0-9._-]{0,254}$/.test(key))
+            throw new Error(`invalid key: ${key}`);
+          if (seen.has(key)) throw new Error(`duplicate key: ${key}`);
+          seen.add(key);
+        }
+        const existingKeys = new Set(
+          data.documents.items.map((item) => item.key.toLowerCase()),
+        );
+        for (const row of normalizedRows) {
+          const key = String(row.key);
+          if (
+            !existingKeys.has(key) &&
+            !String(row[data.settings.fallbackLanguage] ?? "").trim()
+          )
+            throw new Error(`missing fallback value: ${key}`);
+        }
         setDraft((current) => {
           if (!current) return current;
           const next = structuredClone(current);
           const existing = new Map(
-            next.documents.items.map((item) => [item.key, item]),
+            next.documents.items.map((item) => [item.key.toLowerCase(), item]),
           );
-          for (const row of rows) {
-            const key = String(row.key ?? "").trim();
-            if (!key) continue;
+          for (const row of normalizedRows) {
+            const key = String(row.key);
             let item = existing.get(key);
             if (!item) {
               item = {
                 key,
                 meta: String(row.meta ?? ""),
+                enabled: true,
                 values: Object.fromEntries(
                   languages.map(([code]) => [
                     code,
@@ -260,6 +375,9 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
               next.documents.items.push(item);
               existing.set(key, item);
             }
+            if (!existingKeys.has(key) && typeof row.meta === "string")
+              item.meta = row.meta.trim();
+            if (typeof row.enabled === "boolean") item.enabled = row.enabled;
             for (const [code] of languages) {
               if (typeof row[code] === "string") {
                 const content = row[code] as string;
@@ -271,11 +389,12 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
               }
             }
           }
+          next.documents.total = next.documents.items.length;
           return next;
         });
         setError("");
         setNotice(
-          `已导入 ${importedRows} 行到当前草稿，请检查后点击“保存草稿”或“保存并发布”。`,
+          `已导入 ${normalizedRows.length} 行到当前草稿，请检查后点击“保存草稿”或“保存并发布”。`,
         );
       } catch {
         setError("Excel 文件无法解析，请使用当前页面导出的模板。");
@@ -549,7 +668,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           </div>
           <div className="heading-actions">
             {draft && (
-              <Button variant="ghost" type="button" onClick={addRow}>
+              <Button variant="ghost" type="button" onClick={openAddPanel}>
                 <Plus size={15} />
                 添加文案
               </Button>
@@ -581,6 +700,20 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           </div>
         </div>
         <div className="card-body">
+          <div className="localization-toolbar">
+            <label className="search-field">
+              <Search size={16} aria-hidden="true" />
+              <input
+                className="input"
+                value={documentSearch}
+                placeholder="搜索 Key 或任意语言文案"
+                onChange={(event) => setDocumentSearch(event.target.value)}
+              />
+            </label>
+            <span className="section-caption">
+              共 {filteredDocuments.length} / {data.documents.items.length} 条
+            </span>
+          </div>
           <div className="message-table-wrap">
             <table className="message-table">
               <thead>
@@ -592,11 +725,13 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                       <small className="table-language-code">{code}</small>
                     </th>
                   ))}
+                  <th>状态</th>
                   <th>来源</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {data.documents.items.map((item) => (
+                {filteredDocuments.map((item) => (
                   <tr key={item.key}>
                     <td className="mono">{item.key}</td>
                     {languages.map(([code]) => (
@@ -613,6 +748,19 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                       </td>
                     ))}
                     <td>
+                      <label className="inline-switch">
+                        <input
+                          type="checkbox"
+                          disabled={!draft}
+                          checked={item.enabled}
+                          onChange={(event) =>
+                            toggleDocument(item.key, event.target.checked)
+                          }
+                        />
+                        <span>{item.enabled ? "启用" : "停用"}</span>
+                      </label>
+                    </td>
+                    <td>
                       {Object.values(item.values).some(
                         (value) => value.source === "tenant",
                       ) ? (
@@ -623,13 +771,94 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                         <span className="status-pill">全局继承</span>
                       )}
                     </td>
+                    <td>
+                      {!originalKeys.has(item.key.toLowerCase()) && draft ? (
+                        <Button
+                          variant="ghost"
+                          type="button"
+                          onClick={() => removeNewDocument(item.key)}
+                        >
+                          <Trash2 size={15} />
+                          移除
+                        </Button>
+                      ) : (
+                        <span className="section-caption">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {filteredDocuments.length === 0 && (
+            <EmptyState title="没有匹配的多语言文案" />
+          )}
         </div>
       </Card>
+      <SidePanel
+        open={addPanelOpen}
+        title="添加文案"
+        description="Key 保存后不可直接改名；请使用小写字母、数字、点、下划线或短横线。"
+        onClose={() => setAddPanelOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAddPanelOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={addDocument}>
+              <Plus size={16} />
+              加入草稿
+            </Button>
+          </>
+        }
+      >
+        <div className="side-panel-form">
+          <label className="form-field">
+            <span>Key</span>
+            <input
+              className="input mono"
+              autoFocus
+              value={newDocumentKey}
+              placeholder="例如 wallet.connect"
+              onChange={(event) => {
+                setNewDocumentKey(event.target.value.toLowerCase());
+                setNewDocumentError("");
+              }}
+            />
+          </label>
+          <label className="form-field">
+            <span>备注（可选）</span>
+            <input
+              className="input"
+              value={newDocumentMeta}
+              placeholder="例如：钱包连接按钮"
+              onChange={(event) => setNewDocumentMeta(event.target.value)}
+            />
+          </label>
+          {languages.map(([code, item]) => (
+            <label className="form-field" key={code}>
+              <span>
+                {item.label}（{code}）
+                {code === data.settings.fallbackLanguage && " · 必填"}
+              </span>
+              <textarea
+                className="input textarea"
+                value={newDocumentValues[code] ?? ""}
+                placeholder={`填写 ${item.label} 文案`}
+                onChange={(event) =>
+                  setNewDocumentValues((current) => ({
+                    ...current,
+                    [code]: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          ))}
+          {newDocumentError && (
+            <div className="error-banner">{newDocumentError}</div>
+          )}
+        </div>
+      </SidePanel>
       <Card className="save-card">
         <div className="card-body save-layout">
           <label className="form-field">

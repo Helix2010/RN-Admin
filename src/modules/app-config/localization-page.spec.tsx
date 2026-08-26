@@ -61,6 +61,7 @@ function localizationView(): LocalizationView {
         {
           key: "common.confirm",
           meta: "common",
+          enabled: true,
           values: {
             "en-US": {
               content: "Confirm",
@@ -134,6 +135,36 @@ describe("documentPayload", () => {
       "ja-JP": "確認",
     });
   });
+
+  it("normalizes a new key and includes create and enabled changes", () => {
+    const original = localizationView();
+    const draft = structuredClone(original);
+    draft.documents.items.push({
+      key: "Wallet.Connect",
+      meta: "wallet",
+      enabled: true,
+      values: {
+        "en-US": { content: "Connect", source: "tenant", missing: false },
+        "zh-CN": { content: "连接", source: "tenant", missing: false },
+      },
+    });
+    draft.documents.items[0]!.enabled = false;
+
+    expect(documentPayload(draft, original)).toEqual([
+      {
+        key: "common.confirm",
+        meta: "common",
+        enabled: false,
+        values: {},
+      },
+      {
+        key: "wallet.connect",
+        meta: "wallet",
+        create: true,
+        values: { "en-US": "Connect", "zh-CN": "连接" },
+      },
+    ]);
+  });
 });
 
 describe("LocalizationPage draft workflow", () => {
@@ -201,5 +232,62 @@ describe("LocalizationPage draft workflow", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "发布当前草稿" })).toBeTruthy();
+  });
+
+  it("adds a lowercase unique key in the side panel without saving immediately", async () => {
+    apiMocks.localization.mockResolvedValue(localizationView());
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LocalizationPage
+          tenantId="tenant-a"
+          tenantName="Tenant A"
+          onNavigate={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "编辑多语言" }));
+    await user.click(screen.getByRole("button", { name: "添加文案" }));
+    const keyInput = screen.getByPlaceholderText("例如 wallet.connect");
+    await user.type(keyInput, "Wallet.Connect");
+    expect((keyInput as HTMLInputElement).value).toBe("wallet.connect");
+    await user.type(
+      screen.getByPlaceholderText("填写 English 文案"),
+      "Connect",
+    );
+    await user.click(screen.getByRole("button", { name: "加入草稿" }));
+
+    expect(screen.getByText("wallet.connect")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "移除" })).toBeTruthy();
+    expect(apiMocks.saveLocalizationDocuments).not.toHaveBeenCalled();
+  });
+
+  it("searches by key and any language value", async () => {
+    apiMocks.localization.mockResolvedValue(localizationView());
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LocalizationPage
+          tenantId="tenant-a"
+          tenantName="Tenant A"
+          onNavigate={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    const search =
+      await screen.findByPlaceholderText("搜索 Key 或任意语言文案");
+    await user.type(search, "不存在");
+    expect(screen.getByText("没有匹配的多语言文案")).toBeTruthy();
+    await user.clear(search);
+    await user.type(search, "确认");
+    expect(screen.getByText("common.confirm")).toBeTruthy();
   });
 });
