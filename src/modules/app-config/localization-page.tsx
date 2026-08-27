@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Copy,
+  ExternalLink,
   Languages,
   Plus,
   Save,
@@ -8,7 +10,7 @@ import {
   Trash2,
   UploadCloud,
 } from "lucide-react";
-import { adminApi, type LocalizationView } from "../../core/api";
+import { adminApi, publicApiUrl, type LocalizationView } from "../../core/api";
 import {
   Button,
   Card,
@@ -301,6 +303,17 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       return next;
     });
   };
+  const copyLanguageResource = async (code: string, fileUrl: string) => {
+    const url = publicApiUrl(fileUrl);
+    try {
+      await navigator.clipboard.writeText(url);
+      setError("");
+      setNotice(`已复制 ${code} 语言包链接。`);
+    } catch {
+      setNotice("");
+      setError("复制失败，请打开语言包后从浏览器地址栏复制链接。");
+    }
+  };
   const exportExcel = async () => {
     const XLSX = await import("@e965/xlsx");
     const rows = data.documents.items.map((item) =>
@@ -568,6 +581,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
             <table className="message-table language-settings-table">
               <thead>
                 <tr>
+                  <th className="message-index-column">序号</th>
                   <th>语言编码</th>
                   <th>显示名称</th>
                   <th>本地名称</th>
@@ -578,84 +592,129 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                 </tr>
               </thead>
               <tbody>
-                {languages.map(([code, item]) => (
-                  <tr key={code}>
-                    <td className="mono">{code}</td>
-                    <td>
-                      <input
-                        className="input"
-                        disabled={!draft}
-                        value={item.label}
-                        onChange={(event) =>
-                          updateLanguage(code, (value) => {
-                            value.label = event.target.value;
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="input"
-                        disabled={!draft}
-                        value={item.nativeName}
-                        onChange={(event) =>
-                          updateLanguage(code, (value) => {
-                            value.nativeName = event.target.value;
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <select
-                        className="input"
-                        disabled={!draft}
-                        value={item.direction}
-                        onChange={(event) =>
-                          updateLanguage(code, (value) => {
-                            value.direction = event.target.value as
-                              "ltr" | "rtl";
-                          })
-                        }
-                      >
-                        <option value="ltr">LTR</option>
-                        <option value="rtl">RTL</option>
-                      </select>
-                    </td>
-                    <td>
-                      <input
-                        className="input language-sort-input"
-                        disabled={!draft}
-                        type="number"
-                        min={0}
-                        value={item.sort}
-                        onChange={(event) =>
-                          updateLanguage(code, (value) => {
-                            value.sort = Number(event.target.value);
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="checkbox"
-                        disabled={
-                          !draft || code === data.settings.fallbackLanguage
-                        }
-                        checked={item.enabled}
-                        onChange={(event) =>
-                          updateLanguage(code, (value) => {
-                            value.enabled = event.target.checked;
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <span className="status-pill">
-                        {item.source === "tenant" ? "租户覆盖" : "全局继承"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {languages.map(([code, item], index) => {
+                  const resourceUrl = item.resource?.fileUrl
+                    ? publicApiUrl(item.resource.fileUrl)
+                    : null;
+                  return (
+                    <tr key={code}>
+                      <td className="message-index-column mono">{index + 1}</td>
+                      <td className="language-code-cell">
+                        <span className="language-code-actions">
+                          {resourceUrl ? (
+                            <a
+                              className="language-resource-link mono"
+                              href={resourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`在新窗口打开 ${code} 语言包`}
+                            >
+                              {code}
+                              <ExternalLink size={14} aria-hidden="true" />
+                            </a>
+                          ) : (
+                            <span className="mono language-resource-unavailable">
+                              {code}
+                            </span>
+                          )}
+                          <button
+                            className="icon-button language-resource-copy"
+                            type="button"
+                            disabled={!item.resource?.fileUrl}
+                            aria-label={`复制 ${code} 语言包链接`}
+                            title={
+                              resourceUrl
+                                ? `复制 ${code} 语言包链接`
+                                : "该语言尚未发布语言包"
+                            }
+                            onClick={() =>
+                              item.resource?.fileUrl &&
+                              void copyLanguageResource(
+                                code,
+                                item.resource.fileUrl,
+                              )
+                            }
+                          >
+                            <Copy size={14} aria-hidden="true" />
+                          </button>
+                        </span>
+                      </td>
+                      <td>
+                        <input
+                          className="input"
+                          disabled={!draft}
+                          value={item.label}
+                          onChange={(event) =>
+                            updateLanguage(code, (value) => {
+                              value.label = event.target.value;
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="input"
+                          disabled={!draft}
+                          value={item.nativeName}
+                          onChange={(event) =>
+                            updateLanguage(code, (value) => {
+                              value.nativeName = event.target.value;
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <select
+                          className="input"
+                          disabled={!draft}
+                          value={item.direction}
+                          onChange={(event) =>
+                            updateLanguage(code, (value) => {
+                              value.direction = event.target.value as
+                                "ltr" | "rtl";
+                            })
+                          }
+                        >
+                          <option value="ltr">LTR</option>
+                          <option value="rtl">RTL</option>
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          className="input language-sort-input"
+                          disabled={!draft}
+                          type="number"
+                          min={0}
+                          value={item.sort}
+                          onChange={(event) =>
+                            updateLanguage(code, (value) => {
+                              value.sort = Number(event.target.value);
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          disabled={
+                            !draft || code === data.settings.fallbackLanguage
+                          }
+                          checked={item.enabled}
+                          onChange={(event) =>
+                            updateLanguage(code, (value) => {
+                              value.enabled = event.target.checked;
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <span className="status-pill">
+                          {item.source === "tenant" ? "租户覆盖" : "全局继承"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

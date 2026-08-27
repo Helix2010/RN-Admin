@@ -41,7 +41,14 @@ function localizationView(): LocalizationView {
           sort: 1,
           source: "global",
           publishStatus: "published",
-          resource: null,
+          resource: {
+            version: "260827090000",
+            objectKey: "localization/0/en-US/package.json",
+            fileUrl: "/v1/mobile/languages/en-US/document?v=260827090000",
+            sha256: "abc123",
+            size: 1024,
+            publishedAt: "2026-08-27T09:00:00Z",
+          },
         },
         "zh-CN": {
           label: "简体中文",
@@ -168,6 +175,50 @@ describe("documentPayload", () => {
 });
 
 describe("LocalizationPage draft workflow", () => {
+  it("shows stable language indexes and exposes published resource actions", async () => {
+    apiMocks.localization.mockResolvedValue(localizationView());
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const user = userEvent.setup();
+    const writeText = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LocalizationPage
+          tenantId="tenant-a"
+          tenantName="Tenant A"
+          onNavigate={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    const resourceLink = await screen.findByRole("link", { name: "en-US" });
+    expect(resourceLink.getAttribute("href")).toBe(
+      "http://localhost:3000/v1/mobile/languages/en-US/document?v=260827090000",
+    );
+    expect(resourceLink.getAttribute("target")).toBe("_blank");
+    expect(
+      resourceLink.closest("tr")?.querySelector(".message-index-column")
+        ?.textContent,
+    ).toBe("1");
+    await user.click(
+      screen.getByRole("button", { name: "复制 en-US 语言包链接" }),
+    );
+    expect(writeText).toHaveBeenCalledWith(
+      "http://localhost:3000/v1/mobile/languages/en-US/document?v=260827090000",
+    );
+    expect(screen.getByText("已复制 en-US 语言包链接。")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "复制 zh-CN 语言包链接",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
   it("keeps manual edits local until the administrator saves the draft", async () => {
     const initial = localizationView();
     const saved = structuredClone(initial);

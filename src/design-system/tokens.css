@@ -1339,35 +1339,82 @@ tr:hover td {
   width: 25%;
 }
 .localization-documents-table th:first-child,
-.localization-documents-table td:first-child {
+.localization-documents-table td:first-child,
+.language-settings-table th:first-child,
+.language-settings-table td:first-child {
   width: 64px;
 }
 .localization-documents-table th:nth-child(2),
 .localization-documents-table td:nth-child(2) {
   width: 25%;
 }
+.language-settings-table th:nth-child(2),
+.language-settings-table td:nth-child(2) {
+  width: 170px;
+}
 .message-index-column {
   text-align: center;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.localization-documents-table tbody td {
+.localization-documents-table tbody td,
+.language-settings-table tbody td {
   transition:
     background 140ms ease,
     box-shadow 140ms ease;
 }
 .localization-documents-table tbody tr:hover td,
-.localization-documents-table tbody tr:focus-within td {
+.localization-documents-table tbody tr:focus-within td,
+.language-settings-table tbody tr:hover td,
+.language-settings-table tbody tr:focus-within td {
   background: var(--table-row-active);
 }
 .localization-documents-table tbody tr:hover td:first-child,
-.localization-documents-table tbody tr:focus-within td:first-child {
+.localization-documents-table tbody tr:focus-within td:first-child,
+.language-settings-table tbody tr:hover td:first-child,
+.language-settings-table tbody tr:focus-within td:first-child {
   color: var(--brand);
   box-shadow: inset 3px 0 var(--brand);
 }
 .localization-documents-table tbody tr:hover .input,
-.localization-documents-table tbody tr:focus-within .input {
+.localization-documents-table tbody tr:focus-within .input,
+.language-settings-table tbody tr:hover .input,
+.language-settings-table tbody tr:focus-within .input {
   border-color: var(--brand);
+}
+.language-code-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.language-resource-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand);
+  font-weight: 700;
+  text-decoration: none;
+}
+.language-resource-link:hover {
+  color: var(--brand-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.language-resource-unavailable {
+  color: var(--table-text);
+}
+.language-resource-copy {
+  width: 30px;
+  height: 30px;
+}
+.language-resource-copy:hover:not(:disabled) {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--hover);
+}
+.language-resource-copy:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 .message-table th:last-child,
 .message-table td:last-child {
