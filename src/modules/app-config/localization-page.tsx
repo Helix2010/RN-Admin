@@ -34,6 +34,9 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
   const [confirm, setConfirm] = useState<"save" | "publish" | "discard" | null>(
     null,
   );
+  const [actionComposer, setActionComposer] = useState<
+    "save" | "publish" | null
+  >(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [newLanguageCode, setNewLanguageCode] = useState("");
@@ -78,6 +81,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       queryClient.setQueryData(["localization", tenantId], value);
       setDraft(structuredClone(value));
       setConfirm(null);
+      setActionComposer(null);
       setReason("");
       setOriginal(structuredClone(value));
       setError("");
@@ -110,6 +114,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       });
       setDraft(null);
       setConfirm(null);
+      setActionComposer(null);
       setReason("");
       setOriginal(null);
       setNotice(
@@ -418,29 +423,36 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
     };
     reader.readAsArrayBuffer(file);
   };
-  const save = () => {
-    if (!draft || reason.trim().length < 3) {
-      setError("保存或发布前请填写至少 3 个字符的原因");
-      return;
-    }
+  const openSaveComposer = () => {
+    if (!draft) return;
     if (!hasUnsavedChanges) {
       setError("当前没有未保存的修改。");
       return;
     }
-    setConfirm("save");
+    setError("");
+    setActionComposer("save");
   };
-  const publish = () => {
+  const openPublishComposer = () => {
+    if (!draft) return;
+    setError("");
+    setActionComposer("publish");
+  };
+  const continueAction = () => {
+    if (!actionComposer) return;
     if (reason.trim().length < 3) {
-      setError("发布前请填写至少 3 个字符的原因");
+      setError("请填写至少 3 个字符的修改原因");
       return;
     }
-    setConfirm("publish");
+    setError("");
+    setConfirm(actionComposer);
   };
   const cancelEditing = () => {
     if (hasUnsavedChanges) {
       setConfirm("discard");
       return;
     }
+    setActionComposer(null);
+    setReason("");
     setDraft(null);
     setOriginal(null);
   };
@@ -925,73 +937,110 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           )}
         </div>
       </SidePanel>
-      <Card className="save-card">
-        <div className="card-body save-layout">
-          <label className="form-field">
-            <span>修改原因</span>
-            <textarea
-              className="input textarea"
-              disabled={!draft}
-              value={reason}
-              placeholder={
-                draft ? "例如：新增日语并修正文案" : "点击“编辑多语言”后填写"
-              }
-              onChange={(event) => setReason(event.target.value)}
-            />
-          </label>
-          <div className="save-state">
-            <StatusPill
-              status={
-                hasUnsavedChanges || hasUnpublishedDraft
-                  ? hasUnsavedChanges
-                    ? "editing"
+      {draft && (
+        <Card
+          className={`save-card ${actionComposer ? "save-card-expanded" : "save-card-compact"}`}
+        >
+          {!actionComposer ? (
+            <div className="card-body save-toolbar">
+              <div className="save-state">
+                <StatusPill
+                  status={
+                    hasUnsavedChanges
+                      ? "editing"
+                      : hasUnpublishedDraft
+                        ? "draft"
+                        : "active"
+                  }
+                />
+                <span>
+                  {hasUnsavedChanges
+                    ? "修改仍在当前浏览器草稿中，尚未写入数据库。"
                     : hasUnpublishedDraft
-                      ? "draft"
-                      : "active"
-                  : "active"
-              }
-            />
-            <span>
-              {hasUnsavedChanges
-                ? "修改仍在当前浏览器草稿中，尚未写入数据库。"
-                : draft && hasUnpublishedDraft
-                  ? "草稿已保存到数据库，但尚未生成 App 可用的发布资源。"
-                  : draft
-                    ? "当前内容已发布，没有未保存修改。"
+                      ? "草稿已保存，尚未生成 App 可用的发布资源。"
+                      : "当前内容已发布，没有未保存修改。"}
+                </span>
+              </div>
+              <div className="save-actions">
+                <Button
+                  variant="ghost"
+                  disabled={
+                    !hasUnsavedChanges ||
+                    saveMutation.isPending ||
+                    publishMutation.isPending
+                  }
+                  onClick={openSaveComposer}
+                >
+                  <Save size={16} />
+                  保存草稿
+                </Button>
+                <Button
+                  disabled={saveMutation.isPending || publishMutation.isPending}
+                  onClick={openPublishComposer}
+                >
+                  {hasUnsavedChanges
+                    ? "保存并发布"
                     : hasUnpublishedDraft
-                      ? "数据库中有已保存但尚未发布的草稿；进入编辑后可直接发布。"
-                      : "点击“编辑多语言”开始修改。"}
-            </span>
-          </div>
-          <div className="save-actions">
-            <Button
-              variant="ghost"
-              disabled={
-                !draft ||
-                !hasUnsavedChanges ||
-                saveMutation.isPending ||
-                publishMutation.isPending
-              }
-              onClick={save}
-            >
-              <Save size={16} />
-              保存草稿
-            </Button>
-            <Button
-              disabled={
-                !draft || saveMutation.isPending || publishMutation.isPending
-              }
-              onClick={publish}
-            >
-              {hasUnsavedChanges
-                ? "保存并发布"
-                : hasUnpublishedDraft
-                  ? "发布当前草稿"
-                  : "重新发布资源"}
-            </Button>
-          </div>
-        </div>
-      </Card>
+                      ? "发布当前草稿"
+                      : "重新发布资源"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="card-body save-composer">
+              <div className="save-composer-heading">
+                <div>
+                  <div className="eyebrow">
+                    {actionComposer === "save"
+                      ? "Save draft"
+                      : "Publish resources"}
+                  </div>
+                  <h2>
+                    {actionComposer === "save"
+                      ? "保存多语言草稿"
+                      : hasUnsavedChanges
+                        ? "保存并发布语言资源"
+                        : hasUnpublishedDraft
+                          ? "发布当前多语言草稿"
+                          : "重新发布语言资源"}
+                  </h2>
+                  <p>
+                    {actionComposer === "save"
+                      ? "只写入数据库，App 暂时不会获取本次修改。"
+                      : "将为所有启用语言生成完整 JSON，并上传到对象存储供 App 获取。"}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={() => setActionComposer(null)}
+                >
+                  收起
+                </Button>
+              </div>
+              <label className="form-field save-reason-field">
+                <span>修改原因</span>
+                <textarea
+                  autoFocus
+                  className="input textarea"
+                  value={reason}
+                  placeholder="例如：新增日语并修正文案"
+                  onChange={(event) => setReason(event.target.value)}
+                />
+                <small>至少填写 3 个字符，将写入操作审计。</small>
+              </label>
+              <div className="save-composer-footer">
+                <span className="section-caption">
+                  下一步仍会显示最终确认，不会立即提交。
+                </span>
+                <Button type="button" onClick={continueAction}>
+                  继续确认
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
       <ConfirmDialog
         open={confirm !== null}
         title={
@@ -1025,6 +1074,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
             setDraft(null);
             setOriginal(null);
             setConfirm(null);
+            setActionComposer(null);
             setReason("");
             setNotice("");
           } else saveMutation.mutate();

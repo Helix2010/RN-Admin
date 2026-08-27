@@ -244,6 +244,7 @@ describe("LocalizationPage draft workflow", () => {
       </QueryClientProvider>,
     );
 
+    expect(screen.queryByText("修改原因")).toBeNull();
     await user.click(await screen.findByRole("button", { name: "编辑多语言" }));
     expect(
       screen.getByText(/手动输入或导入 Excel：只修改当前浏览器草稿/),
@@ -257,11 +258,13 @@ describe("LocalizationPage draft workflow", () => {
     ).toBeTruthy();
     expect(apiMocks.saveLocalizationDocuments).not.toHaveBeenCalled();
 
+    await user.click(screen.getByRole("button", { name: "保存草稿" }));
+    expect(screen.getByText("保存多语言草稿")).toBeTruthy();
     await user.type(
       screen.getByPlaceholderText("例如：新增日语并修正文案"),
       "修正英文按钮文案",
     );
-    await user.click(screen.getByRole("button", { name: "保存草稿" }));
+    await user.click(screen.getByRole("button", { name: "继续确认" }));
     await user.click(screen.getByRole("button", { name: "确认保存" }));
 
     await waitFor(() =>
@@ -283,6 +286,37 @@ describe("LocalizationPage draft workflow", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "发布当前草稿" })).toBeTruthy();
+    expect(screen.queryByText("修改原因")).toBeNull();
+  });
+
+  it("shows the full reason form only after choosing a publish action", async () => {
+    apiMocks.localization.mockResolvedValue(localizationView());
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LocalizationPage
+          tenantId="tenant-a"
+          tenantName="Tenant A"
+          onNavigate={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: "重新发布资源" })).toBeNull();
+    expect(screen.queryByText("修改原因")).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "编辑多语言" }));
+    expect(screen.getByRole("button", { name: "重新发布资源" })).toBeTruthy();
+    expect(screen.queryByText("修改原因")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "重新发布资源" }));
+    expect(screen.getByText("重新发布语言资源")).toBeTruthy();
+    expect(screen.getByText("修改原因")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "继续确认" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "收起" }));
+    expect(screen.queryByText("修改原因")).toBeNull();
   });
 
   it("adds a lowercase unique key in the side panel without saving immediately", async () => {
