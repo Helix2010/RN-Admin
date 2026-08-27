@@ -1195,15 +1195,13 @@ tr:hover td {
 .advanced-settings-section + .advanced-settings-section {
   margin-top: 18px;
 }
-.advanced-settings-section > summary,
-.advanced-release-options > summary {
+.advanced-settings-section > summary {
   padding: 17px 20px;
   color: var(--text);
   cursor: pointer;
   font-weight: 700;
 }
-.advanced-settings-section[open] > summary,
-.advanced-release-options[open] > summary {
+.advanced-settings-section[open] > summary {
   border-bottom: 1px solid var(--line);
 }
 .advanced-settings-section > .distribution-side,
@@ -1240,15 +1238,6 @@ tr:hover td {
 .form-field .input,
 .form-field .select {
   width: 100%;
-}
-.advanced-release-options {
-  grid-column: 1 / -1;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: var(--panel-2);
-}
-.advanced-release-options .form-grid {
-  padding: 16px;
 }
 .publish-success-card {
   display: flex;

@@ -48,6 +48,7 @@ const actionDescriptions: Record<string, string> = {
   publish: "使该版本成为官网当前下载版本，同平台原活跃版本会转为历史版本。",
   pause: "停止官网继续分发该版本；安装包和发布记录保留，之后可以再次发布恢复。",
 };
+const DEFAULT_RUNTIME_VERSION = "expo:57.0.15";
 
 function formatFileSize(value: number): string {
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
@@ -194,7 +195,6 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
     adminApi.releases(tenantId),
   );
   const [showCreate, setShowCreate] = React.useState(false);
-  const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [publishedRelease, setPublishedRelease] =
     React.useState<Release | null>(null);
   const [shareRelease, setShareRelease] = React.useState<Release | null>(null);
@@ -204,7 +204,6 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
   const [platform, setPlatform] = React.useState("android");
   const [version, setVersion] = React.useState("");
   const [buildNumber, setBuildNumber] = React.useState("");
-  const [runtimeVersion, setRuntimeVersion] = React.useState("expo:57.0.15");
   const [releaseNotes, setReleaseNotes] =
     React.useState("修复已知问题并优化体验");
   const [uploadProgress, setUploadProgress] = React.useState(0);
@@ -299,7 +298,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
         platform,
         version: version.trim(),
         buildNumber: Number(buildNumber),
-        runtimeVersion,
+        runtimeVersion: DEFAULT_RUNTIME_VERSION,
         releaseNotes: {
           "zh-CN": releaseNotes
             .split("\n")
@@ -751,28 +750,6 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
               </small>
             </div>
           )}
-          <details
-            className="advanced-release-options"
-            open={advancedOpen}
-            onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-          >
-            <summary>高级选项</summary>
-            <div className="form-grid form-grid-3">
-              <label className="form-field">
-                <span>Runtime Version</span>
-                <input
-                  className="input"
-                  value={runtimeVersion}
-                  disabled={saveReleaseMutation.isPending}
-                  onChange={(event) => setRuntimeVersion(event.target.value)}
-                />
-              </label>
-              <label className="form-field">
-                <span>发布模式</span>
-                <input className="input" value="校验通过后全量发布" disabled />
-              </label>
-            </div>
-          </details>
         </div>
       </SidePanel>
       <SidePanel
