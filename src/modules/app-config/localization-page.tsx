@@ -519,7 +519,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           </span>
         </div>
       )}
-      <Card>
+      <Card className="localization-card">
         <div className="card-header">
           <div>
             <h2>语言设置</h2>
@@ -747,7 +747,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           </div>
         </div>
       </Card>
-      <Card>
+      <Card className="localization-card">
         <div className="card-header">
           <div>
             <h2>文案内容</h2>

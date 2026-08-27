@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Database,
@@ -65,6 +66,26 @@ const paletteLabels: Record<(typeof paletteKeys)[number], string> = {
   backdrop: "遮罩",
 };
 
+const paletteUsage: Record<(typeof paletteKeys)[number], string> = {
+  primary: "主按钮、选中状态和品牌强调",
+  onPrimary: "主品牌色背景上的文字与图标",
+  background: "App 页面最底层背景",
+  surface: "卡片、导航栏和弹层容器",
+  surfaceVariant: "次级卡片、筛选和输入区域",
+  text: "标题、金额和重要正文",
+  textMuted: "辅助说明、时间和次要信息",
+  border: "卡片、输入框和分割线",
+  success: "成功状态和安全提示",
+  warning: "待处理、风险提醒和警告",
+  danger: "失败、删除和危险操作",
+  info: "普通信息和帮助提示",
+  pricePositive: "价格上涨和正收益",
+  priceNegative: "价格下跌和负收益",
+  risk: "Web3 授权、交易等风险标签",
+  focus: "输入框和可操作组件的焦点环",
+  backdrop: "弹层后方的页面遮罩",
+};
+
 const featureLabels: Record<keyof ManagedAppConfig["features"], string> = {
   updateCenter: "升级中心",
   otaEnabled: "OTA 热更新",
@@ -81,6 +102,8 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
   const [draft, setDraft] = useState<ManagedAppConfig | null>(null);
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState("");
+  const [saveComposerOpen, setSaveComposerOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "error" | "success";
@@ -103,6 +126,8 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
       setDraft(null);
       setDraftVersion(null);
       setReason("");
+      setReasonError("");
+      setSaveComposerOpen(false);
       setConfirmOpen(false);
       setFeedback({
         kind: "success",
@@ -130,12 +155,16 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
     setDraft(structuredClone(data.config));
     setDraftVersion(data.metadata.databaseVersion);
     setReason("");
+    setReasonError("");
+    setSaveComposerOpen(false);
     setFeedback(null);
   };
   const cancelEdit = () => {
     setDraft(null);
     setDraftVersion(null);
     setReason("");
+    setReasonError("");
+    setSaveComposerOpen(false);
     setFeedback(null);
   };
   const updateDraft = (change: (next: ManagedAppConfig) => void) => {
@@ -146,13 +175,23 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
       return next;
     });
   };
-  const save = () => {
+  const openSaveComposer = () => {
     if (!draft || draftVersion === null) return;
-    const error = validateDraft(draft, reason);
+    const error = validateConfig(draft);
     if (error) {
       setFeedback({ kind: "error", message: error });
       return;
     }
+    setFeedback(null);
+    setReasonError("");
+    setSaveComposerOpen(true);
+  };
+  const continueSave = () => {
+    if (reason.trim().length < 3) {
+      setReasonError("请填写至少 3 个字符的修改原因。");
+      return;
+    }
+    setReasonError("");
     setConfirmOpen(true);
   };
   const confirmSave = () => {
@@ -204,11 +243,21 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
           draft={draft}
           databaseVersion={draftVersion}
           reason={reason}
+          reasonError={reasonError}
+          saveComposerOpen={saveComposerOpen}
           saving={mutation.isPending}
-          onReasonChange={setReason}
+          onReasonChange={(value) => {
+            setReason(value);
+            if (reasonError) setReasonError("");
+          }}
           onChange={updateDraft}
           onCancel={cancelEdit}
-          onSave={save}
+          onOpenSave={openSaveComposer}
+          onCloseSave={() => {
+            setSaveComposerOpen(false);
+            setReasonError("");
+          }}
+          onContinueSave={continueSave}
         />
       ) : (
         <ConfigSummary data={data} />
@@ -297,21 +346,30 @@ function ConfigEditor({
   draft,
   databaseVersion,
   reason,
+  reasonError,
+  saveComposerOpen,
   saving,
   onReasonChange,
   onChange,
   onCancel,
-  onSave,
+  onOpenSave,
+  onCloseSave,
+  onContinueSave,
 }: {
   draft: ManagedAppConfig;
   databaseVersion: number;
   reason: string;
+  reasonError: string;
+  saveComposerOpen: boolean;
   saving: boolean;
   onReasonChange: (value: string) => void;
   onChange: (change: (next: ManagedAppConfig) => void) => void;
   onCancel: () => void;
-  onSave: () => void;
+  onOpenSave: () => void;
+  onCloseSave: () => void;
+  onContinueSave: () => void;
 }) {
+  const [previewMode, setPreviewMode] = useState<"light" | "dark">("light");
   return (
     <div className="config-editor">
       <Card>
@@ -384,7 +442,10 @@ function ConfigEditor({
           </label>
         </div>
         <div className="card-body">
-          <Field label="调色板版本">
+          <Field
+            label="调色板版本"
+            hint="修改后建议同步递增版本号，便于 App 缓存失效"
+          >
             <input
               className="input palette-version-input"
               value={draft.theme.paletteVersion}
@@ -395,31 +456,75 @@ function ConfigEditor({
               }
             />
           </Field>
-          <div className="palette-columns">
+          <div className="theme-mode-tabs" role="tablist" aria-label="预览主题">
             {(["light", "dark"] as const).map((mode) => (
-              <div className="palette-panel" key={mode}>
-                <h3>{mode === "light" ? "Light Palette" : "Dark Palette"}</h3>
-                <div className="palette-grid">
-                  {paletteKeys.map((key) => (
-                    <label className="palette-field" key={key}>
-                      <span>{paletteLabels[key]}</span>
-                      <div className="color-input-row">
-                        <i style={{ background: draft.theme[mode][key] }} />
+              <button
+                className={previewMode === mode ? "active" : ""}
+                type="button"
+                role="tab"
+                aria-selected={previewMode === mode}
+                key={mode}
+                onClick={() => setPreviewMode(mode)}
+              >
+                {mode === "light" ? "浅色主题" : "深色主题"}
+              </button>
+            ))}
+          </div>
+          <div className="theme-workbench">
+            <ThemePreview
+              mode={previewMode}
+              palette={draft.theme[previewMode]}
+            />
+            <div className="palette-panel palette-editor-panel">
+              <div className="palette-editor-heading">
+                <div>
+                  <h3>
+                    {previewMode === "light" ? "Light Palette" : "Dark Palette"}
+                  </h3>
+                  <p>修改后左侧 App 落地页会实时更新。</p>
+                </div>
+                <span className="status-pill status-editing">实时预览</span>
+              </div>
+              <div className="palette-grid">
+                {paletteKeys.map((key) => (
+                  <label className="palette-field" key={key}>
+                    <span>{paletteLabels[key]}</span>
+                    <small>{paletteUsage[key]}</small>
+                    <div className="color-input-row">
+                      {isHexColor(draft.theme[previewMode][key]) ? (
                         <input
-                          className="input mono"
-                          value={draft.theme[mode][key]}
+                          className="color-picker"
+                          type="color"
+                          aria-label={`${previewMode === "light" ? "浅色" : "深色"}${paletteLabels[key]}颜色选择器`}
+                          value={draft.theme[previewMode][key]}
                           onChange={(event) =>
                             onChange((next) => {
-                              next.theme[mode][key] = event.target.value;
+                              next.theme[previewMode][key] = event.target.value;
                             })
                           }
                         />
-                      </div>
-                    </label>
-                  ))}
-                </div>
+                      ) : (
+                        <i
+                          className="color-swatch"
+                          aria-hidden="true"
+                          style={{ background: draft.theme[previewMode][key] }}
+                        />
+                      )}
+                      <input
+                        className="input mono"
+                        aria-label={`${previewMode === "light" ? "浅色" : "深色"}${paletteLabels[key]}`}
+                        value={draft.theme[previewMode][key]}
+                        onChange={(event) =>
+                          onChange((next) => {
+                            next.theme[previewMode][key] = event.target.value;
+                          })
+                        }
+                      />
+                    </div>
+                  </label>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </div>
       </Card>
@@ -502,34 +607,199 @@ function ConfigEditor({
         </Card>
       </div>
 
-      <Card className="save-card">
-        <div className="card-body save-layout">
-          <Field label="修改原因" hint="至少 3 个字符，将写入审计日志">
-            <textarea
-              className="input textarea"
-              value={reason}
-              placeholder="例如：调整生产环境 OTA 渠道并更新双语文案"
-              onChange={(event) => onReasonChange(event.target.value)}
-            />
-          </Field>
-          <div className="save-actions">
-            <Button
-              variant="ghost"
-              type="button"
-              onClick={onCancel}
-              disabled={saving}
-            >
-              取消
-            </Button>
-            <Button type="button" onClick={onSave} disabled={saving}>
-              <Save size={16} />
-              {saving ? "正在保存…" : "校验并立即激活"}
-            </Button>
+      <Card
+        className={`save-card ${saveComposerOpen ? "save-card-expanded" : "save-card-compact"}`}
+      >
+        {!saveComposerOpen ? (
+          <div className="card-body save-toolbar">
+            <div className="save-state">
+              <StatusPill status="editing" />
+              <span>配置修改只在当前草稿中，校验通过后才会激活。</span>
+            </div>
+            <div className="save-actions">
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={onCancel}
+                disabled={saving}
+              >
+                取消编辑
+              </Button>
+              <Button type="button" onClick={onOpenSave} disabled={saving}>
+                <Save size={16} />
+                保存配置
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="card-body save-composer">
+            <div className="save-composer-heading">
+              <div>
+                <div className="eyebrow">Activate configuration</div>
+                <h2>保存并激活应用配置</h2>
+                <p>
+                  保存后 RN-App 下一次刷新 bootstrap
+                  即会读取新的主题、功能开关和升级策略。
+                </p>
+              </div>
+              <Button variant="ghost" type="button" onClick={onCloseSave}>
+                收起
+              </Button>
+            </div>
+            <label className="form-field save-reason-field">
+              <span>修改原因</span>
+              <textarea
+                autoFocus
+                className="input textarea"
+                aria-invalid={Boolean(reasonError)}
+                aria-describedby={
+                  reasonError ? "app-config-change-reason-error" : undefined
+                }
+                value={reason}
+                placeholder="例如：调整生产环境主题并更新 OTA 渠道"
+                onChange={(event) => onReasonChange(event.target.value)}
+              />
+              {reasonError ? (
+                <small
+                  className="field-error"
+                  id="app-config-change-reason-error"
+                >
+                  {reasonError}
+                </small>
+              ) : (
+                <small>至少填写 3 个字符，将写入配置审计。</small>
+              )}
+            </label>
+            <div className="save-composer-footer">
+              <span className="section-caption">
+                下一步仍会显示最终确认，不会立即提交。
+              </span>
+              <Button type="button" onClick={onContinueSave}>
+                继续确认
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
+}
+
+type PreviewPalette = ManagedAppConfig["theme"]["light"];
+
+function ThemePreview({
+  mode,
+  palette,
+}: {
+  mode: "light" | "dark";
+  palette: PreviewPalette;
+}) {
+  const previewStyle = {
+    "--preview-background": palette.background,
+    "--preview-surface": palette.surface,
+    "--preview-surface-variant": palette.surfaceVariant,
+    "--preview-text": palette.text,
+    "--preview-muted": palette.textMuted,
+    "--preview-border": palette.border,
+    "--preview-primary": palette.primary,
+    "--preview-on-primary": palette.onPrimary,
+    "--preview-success": palette.success,
+    "--preview-warning": palette.warning,
+    "--preview-danger": palette.danger,
+    "--preview-info": palette.info,
+    "--preview-price-positive": palette.pricePositive,
+    "--preview-price-negative": palette.priceNegative,
+    "--preview-risk": palette.risk,
+    "--preview-focus": palette.focus,
+  } as CSSProperties;
+  return (
+    <div className="theme-preview-panel">
+      <div className="theme-preview-heading">
+        <div>
+          <h3>App 首页预览</h3>
+          <p>模拟真实 App 中主题令牌的使用位置</p>
+        </div>
+        <span className="status-pill">
+          {mode === "light" ? "Light" : "Dark"}
+        </span>
+      </div>
+      <div className="theme-preview-layout">
+        <div
+          className="app-preview"
+          style={previewStyle}
+          data-testid="app-theme-preview"
+        >
+          <div className="app-preview-topbar">
+            <span className="app-preview-logo">D</span>
+            <span className="app-preview-title">AnyFun</span>
+            <span className="app-preview-menu">•••</span>
+          </div>
+          <div className="app-preview-body">
+            <span className="app-preview-eyebrow">PORTFOLIO</span>
+            <h4>资产总览</h4>
+            <p className="app-preview-muted">实时查看你的 Web3 资产</p>
+            <div className="app-preview-balance">
+              <span className="app-preview-muted">总资产估值</span>
+              <strong>¥ 128,640.00</strong>
+              <span className="app-preview-positive">+12.48%</span>
+            </div>
+            <div className="app-preview-actions">
+              <button type="button">买入</button>
+              <button type="button">转账</button>
+            </div>
+            <div className="app-preview-statuses">
+              <span>已连接</span>
+              <span>主网</span>
+              <span>高风险授权</span>
+            </div>
+            <div className="app-preview-list-item">
+              <span className="app-preview-token-icon">E</span>
+              <span>
+                <strong>Ethereum</strong>
+                <small className="app-preview-muted">ETH · 主网</small>
+              </span>
+              <strong className="app-preview-amount">2.48 ETH</strong>
+            </div>
+            <div className="app-preview-market-moves">
+              <span>ETH +3.20%</span>
+              <span>BTC -1.14%</span>
+            </div>
+            <div className="app-preview-alert">
+              <span>!</span>
+              <span>交易前请确认网络与收款地址</span>
+            </div>
+          </div>
+        </div>
+        <div className="theme-preview-legend">
+          <h4>令牌使用说明</h4>
+          {[
+            ["primary", "主品牌色", "买入、转账主按钮"],
+            ["surface", "容器背景", "资产卡片和顶部导航"],
+            ["text", "主文本", "标题和资产金额"],
+            ["success", "成功色", "收益和完成状态"],
+            ["warning", "警告色", "交易风险提醒"],
+            ["border", "边框色", "卡片和列表分隔线"],
+          ].map(([key, label, usage]) => (
+            <div className="theme-preview-legend-item" key={key}>
+              <i
+                style={{ background: palette[key as keyof PreviewPalette] }}
+                aria-hidden="true"
+              />
+              <span>
+                <strong>{label}</strong>
+                <small>{usage}</small>
+              </span>
+              <code>{palette[key as keyof PreviewPalette]}</code>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function isHexColor(value: string): boolean {
+  return /^#[0-9a-f]{6}$/i.test(value.trim());
 }
 
 function Field({
@@ -550,14 +820,25 @@ function Field({
   );
 }
 
-function validateDraft(
-  config: ManagedAppConfig,
-  reason: string,
-): string | null {
+function validateConfig(config: ManagedAppConfig): string | null {
   const parsed = managedAppConfigSchema.safeParse(config);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return `请检查 ${issue.path.join(".") || "配置"}：${issue.message}`;
+  }
+  for (const mode of ["light", "dark"] as const) {
+    for (const key of paletteKeys) {
+      const value = config.theme[mode][key].trim();
+      const valid =
+        isHexColor(value) ||
+        (key === "backdrop" &&
+          /^rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i.test(
+            value,
+          ));
+      if (!valid) {
+        return `${mode === "light" ? "浅色" : "深色"}${paletteLabels[key]}必须使用 #RRGGBB${key === "backdrop" ? " 或 rgba(...)" : ""} 格式。`;
+      }
+    }
   }
   const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
   if (!semver.test(config.updatePolicy.minSupportedVersion)) {
@@ -574,7 +855,6 @@ function validateDraft(
   ) {
     return "最低支持版本不能高于最新版本。";
   }
-  if (reason.trim().length < 3) return "请填写至少 3 个字符的修改原因。";
   return null;
 }
 
