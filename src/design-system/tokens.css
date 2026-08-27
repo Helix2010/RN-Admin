@@ -996,6 +996,77 @@ tr:hover td {
   color: var(--success-text);
   background: var(--success-bg);
 }
+.feedback-viewport {
+  position: fixed;
+  z-index: 45;
+  top: 88px;
+  right: 28px;
+  width: min(440px, calc(100vw - 56px));
+  pointer-events: none;
+}
+.feedback-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 15px;
+  border: 1px solid;
+  border-radius: 12px;
+  box-shadow: 0 18px 44px var(--dialog-shadow);
+  font-size: 13px;
+  line-height: 1.55;
+  pointer-events: auto;
+  animation: feedback-notice-in 180ms ease-out;
+}
+.feedback-notice-error {
+  color: var(--error-text);
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+.feedback-notice-success {
+  color: var(--success-text);
+  border-color: var(--success-border);
+  background: var(--success-bg);
+}
+.feedback-notice-icon {
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+}
+.feedback-notice-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feedback-notice-dismiss {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  margin: -5px -6px -5px 0;
+  border: 0;
+  border-radius: 8px;
+  color: currentColor;
+  background: transparent;
+  cursor: pointer;
+}
+.feedback-notice-dismiss:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.field-error {
+  color: var(--error-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+@keyframes feedback-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 .draft-help-banner {
   margin: 0 0 20px;
   padding: 13px 16px;

@@ -20,6 +20,7 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  FeedbackNotice,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -166,6 +167,12 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
 
   return (
     <>
+      <FeedbackNotice
+        kind={feedback?.kind ?? "success"}
+        message={feedback?.message ?? ""}
+        placement="viewport"
+        onDismiss={() => setFeedback(null)}
+      />
       <div className="page-heading">
         <div>
           <div className="eyebrow">App configuration</div>
@@ -191,16 +198,6 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
           )}
         </div>
       </div>
-
-      {feedback && (
-        <div
-          className={
-            feedback.kind === "error" ? "error-banner" : "success-banner"
-          }
-        >
-          {feedback.message}
-        </div>
-      )}
 
       {draft && draftVersion !== null ? (
         <ConfigEditor

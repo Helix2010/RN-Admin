@@ -16,6 +16,7 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  FeedbackNotice,
   SidePanel,
   StatusPill,
 } from "../../design-system/components";
@@ -31,6 +32,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
   const [draft, setDraft] = useState<LocalizationView | null>(null);
   const [original, setOriginal] = useState<LocalizationView | null>(null);
   const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState("");
   const [confirm, setConfirm] = useState<"save" | "publish" | "discard" | null>(
     null,
   );
@@ -83,6 +85,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       setConfirm(null);
       setActionComposer(null);
       setReason("");
+      setReasonError("");
       setOriginal(structuredClone(value));
       setError("");
       setNotice("已保存为租户草稿，尚未生成 App 使用的发布资源。");
@@ -116,6 +119,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       setConfirm(null);
       setActionComposer(null);
       setReason("");
+      setReasonError("");
       setOriginal(null);
       setNotice(
         "已发布，多语言资源已生成并上传对象存储，App 下次刷新会获取新版本。",
@@ -430,19 +434,22 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
       return;
     }
     setError("");
+    setReasonError("");
     setActionComposer("save");
   };
   const openPublishComposer = () => {
     if (!draft) return;
     setError("");
+    setReasonError("");
     setActionComposer("publish");
   };
   const continueAction = () => {
     if (!actionComposer) return;
     if (reason.trim().length < 3) {
-      setError("请填写至少 3 个字符的修改原因");
+      setReasonError("请填写至少 3 个字符的修改原因。");
       return;
     }
+    setReasonError("");
     setError("");
     setConfirm(actionComposer);
   };
@@ -453,11 +460,21 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
     }
     setActionComposer(null);
     setReason("");
+    setReasonError("");
     setDraft(null);
     setOriginal(null);
   };
   return (
     <>
+      <FeedbackNotice
+        kind={error ? "error" : "success"}
+        message={error || notice}
+        placement="viewport"
+        onDismiss={() => {
+          setError("");
+          setNotice("");
+        }}
+      />
       <div className="page-heading">
         <div>
           <div className="eyebrow">Localization</div>
@@ -490,8 +507,6 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           )}
         </div>
       </div>
-      {error && <div className="error-banner">{error}</div>}
-      {notice && <div className="success-banner">{notice}</div>}
       {draft && (
         <div className="draft-help-banner">
           <strong>
@@ -1013,7 +1028,10 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                 <Button
                   variant="ghost"
                   type="button"
-                  onClick={() => setActionComposer(null)}
+                  onClick={() => {
+                    setActionComposer(null);
+                    setReasonError("");
+                  }}
                 >
                   收起
                 </Button>
@@ -1023,10 +1041,25 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                 <textarea
                   autoFocus
                   className="input textarea"
+                  aria-invalid={Boolean(reasonError)}
+                  aria-describedby={
+                    reasonError ? "localization-change-reason-error" : undefined
+                  }
                   value={reason}
                   placeholder="例如：新增日语并修正文案"
-                  onChange={(event) => setReason(event.target.value)}
+                  onChange={(event) => {
+                    setReason(event.target.value);
+                    if (reasonError) setReasonError("");
+                  }}
                 />
+                {reasonError && (
+                  <small
+                    className="field-error"
+                    id="localization-change-reason-error"
+                  >
+                    {reasonError}
+                  </small>
+                )}
                 <small>至少填写 3 个字符，将写入操作审计。</small>
               </label>
               <div className="save-composer-footer">
@@ -1076,6 +1109,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
             setConfirm(null);
             setActionComposer(null);
             setReason("");
+            setReasonError("");
             setNotice("");
           } else saveMutation.mutate();
         }}

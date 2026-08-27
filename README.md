@@ -23,3 +23,4 @@ pnpm dev
 - `src/modules/audit`：发布操作审计；
 - `src/modules/release-storage`：租户级 S3/R2/MinIO 发布存储配置；
 - `src/design-system`：后台设计令牌和基础组件。
+- [反馈与校验交互规范](docs/FEEDBACK_INTERACTION_STANDARD.md)：统一页面状态、字段校验、视口反馈和高风险确认。

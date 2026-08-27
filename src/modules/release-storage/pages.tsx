@@ -1,13 +1,14 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, CloudCog, Save, Wifi } from "lucide-react";
+import { CloudCog, Save, Wifi } from "lucide-react";
 import { adminApi, type ReleaseStorage } from "../../core/api";
 import {
   Button,
   Card,
   ConfirmDialog,
   EmptyState,
+  FeedbackNotice,
   SelectField,
   StatusPill,
 } from "../../design-system/components";
@@ -64,6 +65,25 @@ export function DistributionSettingsPage({ tenantId }: AdminPageProps) {
     );
   const data = query.data;
   if (!data) return <EmptyState title="没有对象存储配置" />;
+  const feedback = mutation.isError
+    ? {
+        kind: "error" as const,
+        message: `保存失败：${mutation.error.message}`,
+        dismiss: () => mutation.reset(),
+      }
+    : testMutation.isError
+      ? {
+          kind: "error" as const,
+          message: `连接测试失败：${testMutation.error.message}`,
+          dismiss: () => testMutation.reset(),
+        }
+      : testMutation.isSuccess
+        ? {
+            kind: "success" as const,
+            message: `连接测试成功：${testMutation.data.bucket}`,
+            dismiss: () => testMutation.reset(),
+          }
+        : null;
   const current: Draft = draft ?? {
     ...data,
     provider: data.provider ?? "s3",
@@ -86,6 +106,12 @@ export function DistributionSettingsPage({ tenantId }: AdminPageProps) {
   const confirmSave = () => mutation.mutate(current);
   return (
     <>
+      <FeedbackNotice
+        kind={feedback?.kind ?? "success"}
+        message={feedback?.message ?? ""}
+        placement="viewport"
+        onDismiss={feedback?.dismiss}
+      />
       <div className="page-heading">
         <div>
           <div className="eyebrow">Release storage</div>
@@ -112,15 +138,6 @@ export function DistributionSettingsPage({ tenantId }: AdminPageProps) {
           )}
         </div>
       </div>
-      {mutation.isError && (
-        <div className="error-banner">保存失败：{mutation.error.message}</div>
-      )}
-      {testMutation.isSuccess && (
-        <div className="success-banner">
-          <CheckCircle2 size={16} />
-          连接测试成功：{testMutation.data.bucket}
-        </div>
-      )}
       <Card>
         <div className="card-header">
           <div>

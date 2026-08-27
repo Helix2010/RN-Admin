@@ -25,6 +25,7 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  FeedbackNotice,
   FileDropzone,
   SelectField,
   StatusPill,
@@ -207,6 +208,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
     action: string;
   } | null>(null);
   const [actionReason, setActionReason] = React.useState("");
+  const [actionReasonError, setActionReasonError] = React.useState("");
   const [actionConfirmOpen, setActionConfirmOpen] = React.useState(false);
   const [uploadConfirmOpen, setUploadConfirmOpen] = React.useState(false);
   const createMutation = useMutation({
@@ -282,6 +284,19 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
     },
     onError: () => setActionConfirmOpen(false),
   });
+  const actionFeedback = createMutation.isError
+    ? {
+        kind: "error" as const,
+        message: `创建失败：${createMutation.error.message}`,
+        dismiss: () => createMutation.reset(),
+      }
+    : mutation.isError
+      ? {
+          kind: "error" as const,
+          message: `操作失败：${mutation.error.message}`,
+          dismiss: () => mutation.reset(),
+        }
+      : null;
   const shareUrl = shareRelease
     ? publicApiUrl(`/v1/public/releases/${shareRelease.id}/download`)
     : "";
@@ -322,11 +337,16 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
   const runAction = (id: string, action: string) => {
     setPendingAction({ id, action });
     setActionReason("");
+    setActionReasonError("");
   };
   const requestActionConfirmation = () => {
     if (!pendingAction) return;
     const reason = actionReason.trim();
-    if (reason.length < 3) return;
+    if (reason.length < 3) {
+      setActionReasonError("请填写至少 3 个字符的操作原因。");
+      return;
+    }
+    setActionReasonError("");
     setActionConfirmOpen(true);
   };
   const confirmAction = () => {
@@ -340,6 +360,12 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
   };
   return (
     <>
+      <FeedbackNotice
+        kind={actionFeedback?.kind ?? "success"}
+        message={actionFeedback?.message ?? ""}
+        placement="viewport"
+        onDismiss={actionFeedback?.dismiss}
+      />
       <div className="page-heading">
         <div>
           <div className="eyebrow">Release management</div>
@@ -602,11 +628,6 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                 </div>
               </details>
             </div>
-            {createMutation.isError && (
-              <div className="error-banner" style={{ marginTop: 15 }}>
-                创建失败：{createMutation.error.message}
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -629,6 +650,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                 setPendingAction(null);
                 setActionConfirmOpen(false);
                 setActionReason("");
+                setActionReasonError("");
               }}
             >
               取消
@@ -638,10 +660,22 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             <textarea
               className="input textarea"
               aria-label="操作原因"
+              aria-invalid={Boolean(actionReasonError)}
+              aria-describedby={
+                actionReasonError ? "release-action-reason-error" : undefined
+              }
               placeholder="至少 3 个字符，例如：已完成测试环境安装验证"
               value={actionReason}
-              onChange={(event) => setActionReason(event.target.value)}
+              onChange={(event) => {
+                setActionReason(event.target.value);
+                if (actionReasonError) setActionReasonError("");
+              }}
             />
+            {actionReasonError && (
+              <small className="field-error" id="release-action-reason-error">
+                {actionReasonError}
+              </small>
+            )}
             <div className="toolbar action-confirmation-footer">
               <span className="muted">原因会与操作者、请求 ID 一起记录</span>
               <Button
@@ -652,11 +686,6 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                 继续确认
               </Button>
             </div>
-            {mutation.isError && (
-              <div className="error-banner">
-                操作失败：{mutation.error.message}
-              </div>
-            )}
           </div>
         </Card>
       )}

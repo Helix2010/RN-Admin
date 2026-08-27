@@ -8,6 +8,7 @@ import type {
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
+  CheckCircle2,
   ChevronDown,
   FileArchive,
   ShieldCheck,
@@ -192,6 +193,53 @@ export function EmptyState({
       {detail && <span>{detail}</span>}
     </div>
   );
+}
+
+export function FeedbackNotice({
+  kind,
+  message,
+  placement = "inline",
+  onDismiss,
+}: {
+  kind: "error" | "success";
+  message: string;
+  placement?: "inline" | "viewport";
+  onDismiss?: () => void;
+}) {
+  if (!message) return null;
+  const notice = (
+    <div
+      className={`feedback-notice feedback-notice-${kind}`}
+      role={kind === "error" ? "alert" : "status"}
+      aria-live={kind === "error" ? "assertive" : "polite"}
+    >
+      <span className="feedback-notice-icon" aria-hidden="true">
+        {kind === "error" ? (
+          <AlertTriangle size={18} />
+        ) : (
+          <CheckCircle2 size={18} />
+        )}
+      </span>
+      <span className="feedback-notice-message">{message}</span>
+      {onDismiss && (
+        <button
+          className="feedback-notice-dismiss"
+          type="button"
+          aria-label="关闭提示"
+          onClick={onDismiss}
+        >
+          <X size={16} />
+        </button>
+      )}
+    </div>
+  );
+  if (placement === "viewport" && typeof document !== "undefined") {
+    return createPortal(
+      <div className="feedback-viewport">{notice}</div>,
+      document.body,
+    );
+  }
+  return notice;
 }
 
 export function ConfirmDialog({

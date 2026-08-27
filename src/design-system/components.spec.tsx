@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ConfirmDialog, SidePanel } from "./components";
+import { ConfirmDialog, FeedbackNotice, SidePanel } from "./components";
 
 afterEach(() => cleanup());
 
@@ -84,5 +84,31 @@ describe("SidePanel", () => {
     expect(screen.getByRole("dialog", { name: "添加文案" })).toBeTruthy();
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("FeedbackNotice", () => {
+  it("renders viewport errors as an assertive dismissible alert", async () => {
+    const onDismiss = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <FeedbackNotice
+        kind="error"
+        message="请填写修改原因"
+        placement="viewport"
+        onDismiss={onDismiss}
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("请填写修改原因");
+    expect(alert.getAttribute("aria-live")).toBe("assertive");
+    await user.click(screen.getByRole("button", { name: "关闭提示" }));
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
+  it("announces success without stealing focus", () => {
+    render(<FeedbackNotice kind="success" message="保存成功" />);
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
   });
 });
