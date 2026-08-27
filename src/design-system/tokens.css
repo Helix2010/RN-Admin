@@ -31,6 +31,7 @@
   --input: #ffffff;
   --table-head: #f5f8fc;
   --table-text: #33425a;
+  --table-row-active: #e5eeff;
   --progress-track: #e1e8f2;
   --icon-bg: #e6efff;
   --icon-text: #2c5fca;
@@ -1337,6 +1338,37 @@ tr:hover td {
 .message-table td:first-child {
   width: 25%;
 }
+.localization-documents-table th:first-child,
+.localization-documents-table td:first-child {
+  width: 64px;
+}
+.localization-documents-table th:nth-child(2),
+.localization-documents-table td:nth-child(2) {
+  width: 25%;
+}
+.message-index-column {
+  text-align: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.localization-documents-table tbody td {
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+.localization-documents-table tbody tr:hover td,
+.localization-documents-table tbody tr:focus-within td {
+  background: var(--table-row-active);
+}
+.localization-documents-table tbody tr:hover td:first-child,
+.localization-documents-table tbody tr:focus-within td:first-child {
+  color: var(--brand);
+  box-shadow: inset 3px 0 var(--brand);
+}
+.localization-documents-table tbody tr:hover .input,
+.localization-documents-table tbody tr:focus-within .input {
+  border-color: var(--brand);
+}
 .message-table th:last-child,
 .message-table td:last-child {
   width: 46px;
@@ -1522,6 +1554,7 @@ tr:hover td {
   --input: #121e32;
   --table-head: rgba(5, 12, 24, 0.2);
   --table-text: #cfdaeb;
+  --table-row-active: #1c3151;
   --progress-track: #22334d;
   --icon-bg: #243d66;
   --icon-text: #aed0ff;

@@ -42,42 +42,60 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   window.localStorage.clear();
+  window.history.replaceState(null, "", "/releases");
 });
+
+function mockAuthenticatedShell() {
+  apiMocks.session.mockResolvedValue({
+    authenticated: true,
+    actorId: "admin@example.com",
+    expiresAt: null,
+    method: "session",
+  });
+  apiMocks.currentTenant.mockResolvedValue({
+    tenant: {
+      id: "tenant-default",
+      slug: "default",
+      name: "Default tenant",
+      status: "active",
+      createdAt: "2026-08-25T00:00:00Z",
+      updatedAt: "2026-08-25T00:00:00Z",
+    },
+  });
+  apiMocks.releases.mockResolvedValue({
+    items: [],
+    nextCursor: null,
+    hasMore: false,
+  });
+  apiMocks.overview.mockResolvedValue({
+    generatedAt: "2026-08-27T00:00:00Z",
+    current: { android: null, ios: null, harmony: null },
+    counts: {},
+    signals: {
+      crashFreeSessions: null,
+      updateSuccessRate: null,
+      note: "not configured",
+    },
+  });
+}
+
+function renderApp() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>,
+  );
+}
 
 describe("App sidebar actions", () => {
   it("opens help separately and logs out only from the exit action", async () => {
-    apiMocks.session.mockResolvedValue({
-      authenticated: true,
-      actorId: "admin@example.com",
-      expiresAt: null,
-      method: "session",
-    });
+    mockAuthenticatedShell();
     apiMocks.logout.mockResolvedValue({ authenticated: false });
-    apiMocks.currentTenant.mockResolvedValue({
-      tenant: {
-        id: "tenant-default",
-        slug: "default",
-        name: "Default tenant",
-        status: "active",
-        createdAt: "2026-08-25T00:00:00Z",
-        updatedAt: "2026-08-25T00:00:00Z",
-      },
-    });
-    apiMocks.releases.mockResolvedValue({
-      items: [],
-      nextCursor: null,
-      hasMore: false,
-    });
-
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
     const user = userEvent.setup();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>,
-    );
+    renderApp();
 
     const help = await screen.findByRole("link", { name: "帮助与规范" });
     await waitFor(() =>
@@ -92,5 +110,50 @@ describe("App sidebar actions", () => {
 
     await user.click(screen.getByRole("button", { name: "退出管理端" }));
     expect(apiMocks.logout).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe("/releases");
+  });
+
+  it("updates the address and follows browser back navigation", async () => {
+    mockAuthenticatedShell();
+    const user = userEvent.setup();
+    renderApp();
+
+    await screen.findByRole("heading", { name: "发布管理" });
+    await user.click(screen.getByRole("button", { name: "发布总览" }));
+    expect(window.location.pathname).toBe("/dashboard");
+    expect(
+      await screen.findByRole("heading", { name: "发布总览" }),
+    ).toBeTruthy();
+
+    window.history.pushState(null, "", "/releases");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(
+      await screen.findByRole("heading", { name: "发布管理" }),
+    ).toBeTruthy();
+  });
+
+  it("restores the current page from the address after refresh", async () => {
+    window.history.replaceState(null, "", "/dashboard");
+    mockAuthenticatedShell();
+    renderApp();
+
+    expect(
+      await screen.findByRole("heading", { name: "发布总览" }),
+    ).toBeTruthy();
+    expect(window.location.pathname).toBe("/dashboard");
+    expect(
+      screen.getByRole("button", { name: "发布总览" }).classList,
+    ).toContain("active");
+  });
+
+  it("normalizes an unknown address to the default page", async () => {
+    window.history.replaceState(null, "", "/unknown-page");
+    mockAuthenticatedShell();
+    renderApp();
+
+    expect(
+      await screen.findByRole("heading", { name: "发布管理" }),
+    ).toBeTruthy();
+    expect(window.location.pathname).toBe("/releases");
   });
 });

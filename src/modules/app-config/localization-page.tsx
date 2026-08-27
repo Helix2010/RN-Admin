@@ -142,6 +142,9 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
         value.content.toLowerCase().includes(normalizedSearch),
       ),
   );
+  const documentIndexes = new Map(
+    data.documents.items.map((item, index) => [item.key, index + 1]),
+  );
   const originalKeys = new Set(
     original?.documents.items.map((item) => item.key.toLowerCase()) ?? [],
   );
@@ -715,9 +718,10 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
             </span>
           </div>
           <div className="message-table-wrap">
-            <table className="message-table">
+            <table className="message-table localization-documents-table">
               <thead>
                 <tr>
+                  <th className="message-index-column">序号</th>
                   <th>消息 Key</th>
                   {languages.map(([code, item]) => (
                     <th key={code}>
@@ -733,6 +737,9 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
               <tbody>
                 {filteredDocuments.map((item) => (
                   <tr key={item.key}>
+                    <td className="message-index-column mono">
+                      {documentIndexes.get(item.key)}
+                    </td>
                     <td className="mono">{item.key}</td>
                     {languages.map(([code]) => (
                       <td key={code}>

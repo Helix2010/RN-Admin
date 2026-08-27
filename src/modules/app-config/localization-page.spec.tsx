@@ -267,7 +267,22 @@ describe("LocalizationPage draft workflow", () => {
   });
 
   it("searches by key and any language value", async () => {
-    apiMocks.localization.mockResolvedValue(localizationView());
+    const initial = localizationView();
+    initial.documents.items.push({
+      key: "wallet.connect",
+      meta: "wallet",
+      enabled: true,
+      values: {
+        "en-US": {
+          content: "Connect wallet",
+          source: "global",
+          missing: false,
+        },
+        "zh-CN": { content: "连接钱包", source: "global", missing: false },
+      },
+    });
+    initial.documents.total = 2;
+    apiMocks.localization.mockResolvedValue(initial);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -287,7 +302,12 @@ describe("LocalizationPage draft workflow", () => {
     await user.type(search, "不存在");
     expect(screen.getByText("没有匹配的多语言文案")).toBeTruthy();
     await user.clear(search);
-    await user.type(search, "确认");
-    expect(screen.getByText("common.confirm")).toBeTruthy();
+    await user.type(search, "连接钱包");
+    const keyCell = screen.getByText("wallet.connect");
+    expect(keyCell).toBeTruthy();
+    expect(
+      keyCell.closest("tr")?.querySelector(".message-index-column")
+        ?.textContent,
+    ).toBe("2");
   });
 });

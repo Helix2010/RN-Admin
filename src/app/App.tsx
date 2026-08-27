@@ -36,6 +36,24 @@ registerAdminPlugin(appConfigPlugin);
 registerAdminPlugin(auditPlugin);
 registerAdminPlugin(distributionSettingsPlugin);
 
+const defaultPage = "releases";
+const registeredPlugins = getAdminPlugins();
+const availablePages = registeredPlugins.flatMap((plugin) =>
+  Object.keys(plugin.pages),
+);
+
+function pageFromLocation(): string {
+  let candidate = "";
+  try {
+    candidate = decodeURIComponent(
+      window.location.pathname.replace(/^\/+|\/+$/g, ""),
+    );
+  } catch {
+    return defaultPage;
+  }
+  return availablePages.includes(candidate) ? candidate : defaultPage;
+}
+
 const iconMap = {
   dashboard: LayoutDashboard,
   rocket: Rocket,
@@ -47,8 +65,33 @@ const iconMap = {
 
 export function App() {
   const queryClient = useQueryClient();
-  const plugins = getAdminPlugins();
-  const [page, setPage] = useState("releases");
+  const plugins = registeredPlugins;
+  const [page, setPage] = useState(pageFromLocation);
+  useEffect(() => {
+    const syncFromBrowser = () => {
+      const target = pageFromLocation();
+      const expectedPath = `/${target}`;
+      if (window.location.pathname !== expectedPath) {
+        window.history.replaceState(null, "", expectedPath);
+      }
+      setPage(target);
+    };
+    syncFromBrowser();
+    window.addEventListener("popstate", syncFromBrowser);
+    return () => window.removeEventListener("popstate", syncFromBrowser);
+  }, []);
+  const navigate = (nextPage: string, replace = false) => {
+    const target = availablePages.includes(nextPage) ? nextPage : defaultPage;
+    const nextPath = `/${target}`;
+    if (window.location.pathname !== nextPath) {
+      window.history[replace ? "replaceState" : "pushState"](
+        null,
+        "",
+        nextPath,
+      );
+    }
+    setPage(target);
+  };
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const saved = window.localStorage.getItem("rn-admin-theme");
     return saved === "dark" ? "dark" : "light";
@@ -122,7 +165,7 @@ export function App() {
     } finally {
       queryClient.clear();
       setSession(null);
-      setPage("releases");
+      navigate(defaultPage, true);
     }
   };
 
@@ -152,7 +195,6 @@ export function App() {
     Object.hasOwn(plugin.pages, page),
   );
   const Page = activePlugin?.pages[page] ?? plugins[0].pages.dashboard;
-  const navigate = (nextPage: string) => setPage(nextPage);
   const pageLabel =
     activePlugin?.navigation.find((item) => item.id === page)?.label ??
     "发布总览";
@@ -179,6 +221,7 @@ export function App() {
                 <button
                   className={`nav-item ${page === item.id ? "active" : ""}`}
                   key={item.id}
+                  aria-current={page === item.id ? "page" : undefined}
                   onClick={() => navigate(item.id)}
                 >
                   <Icon size={17} />
