@@ -182,6 +182,18 @@ const configSaveSchema = configViewSchema.extend({
   actorId: z.string(),
   requestId: z.string(),
 });
+const jsonValueSchema: z.ZodType<
+  string | number | boolean | null | Record<string, unknown> | unknown[]
+> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
 const auditSchema = z.object({
   id: z.string(),
   actorId: z.string(),
@@ -191,10 +203,14 @@ const auditSchema = z.object({
   reason: z.string(),
   requestId: z.string(),
   createdAt: z.string(),
-  summary: z.record(z.string(), z.union([z.string(), z.number(), z.null()])),
+  summary: z.record(z.string(), jsonValueSchema),
   tenantId: z.string(),
 });
 export type AuditEvent = z.infer<typeof auditSchema>;
+
+export function parseAuditEvent(value: unknown): AuditEvent {
+  return auditSchema.parse(value);
+}
 
 const env = import.meta.env as Record<string, string | undefined>;
 const baseUrl = (env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
