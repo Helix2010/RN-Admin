@@ -262,15 +262,15 @@ const uploadSchema = z.object({
   requiresCredentials: z.boolean().default(false),
 });
 
-const simplifiedReleaseUploadSchema = z.object({
-  release: z.object({
+const releaseArtifactUploadSchema = z.object({
+  artifact: z.object({
     id: z.string(),
-    platform: z.enum(["android", "ios", "harmony"]),
-    version: z.string(),
-    buildNumber: z.number(),
-    status: z.string(),
-    releaseNotes: z.record(z.string(), z.unknown()),
+    token: z.string(),
+    fileName: z.string(),
+    contentType: z.string(),
+    size: z.number(),
     objectKey: z.string(),
+    expiresAt: z.string(),
   }),
   upload: uploadSchema,
 });
@@ -341,33 +341,27 @@ export const adminApi = {
     void tenantId;
     return request("/v1/admin/releases", listSchema);
   },
-  createReleaseUpload: (tenantId: string, payload: unknown) => {
+  createReleaseArtifactUpload: (tenantId: string, payload: unknown) => {
     void tenantId;
     return request(
-      "/v1/admin/releases/uploads",
-      simplifiedReleaseUploadSchema,
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
+      "/v1/admin/release-artifacts/uploads",
+      releaseArtifactUploadSchema,
+      { method: "POST", body: JSON.stringify(payload) },
     );
   },
-  finalizeReleaseUpload: (tenantId: string, releaseId: string) => {
+  createReleaseFromArtifact: (tenantId: string, payload: unknown) => {
+    void tenantId;
+    return request("/v1/admin/releases", z.object({ release: releaseSchema }), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteReleaseArtifact: (tenantId: string, token: string) => {
     void tenantId;
     return request(
-      `/v1/admin/releases/${encodeURIComponent(releaseId)}/finalize`,
-      z.object({
-        release: z.object({
-          id: z.string(),
-          platform: z.string(),
-          status: z.literal("verified"),
-          fileName: z.string(),
-          fileSize: z.number(),
-          sha256: z.string(),
-          metadata: z.record(z.string(), z.unknown()),
-        }),
-      }),
-      { method: "POST", body: "{}" },
+      `/v1/admin/release-artifacts/upload?token=${encodeURIComponent(token)}`,
+      z.object({ deleted: z.literal(true) }),
+      { method: "DELETE", headers: { "x-release-artifact-token": token } },
     );
   },
   config: (tenantId: string) => {
@@ -499,9 +493,16 @@ export function uploadArtifactFile(
   ticket: z.infer<typeof uploadSchema>,
   file: File,
   onProgress: (percentage: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ApiError("上传已取消", 0));
+      return;
+    }
     const xhr = new XMLHttpRequest();
+    const abortUpload = () => xhr.abort();
+    signal?.addEventListener("abort", abortUpload, { once: true });
     xhr.open(ticket.method, ticket.url);
     xhr.withCredentials = ticket.requiresCredentials;
     for (const [key, value] of Object.entries(ticket.headers)) {
@@ -515,15 +516,21 @@ export function uploadArtifactFile(
     xhr.addEventListener("load", () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         onProgress(100);
+        signal?.removeEventListener("abort", abortUpload);
         resolve();
       } else {
+        signal?.removeEventListener("abort", abortUpload);
         reject(new ApiError(`对象存储上传失败 (${xhr.status})`, xhr.status));
       }
     });
-    xhr.addEventListener("error", () =>
-      reject(new ApiError("无法连接对象存储", 0)),
-    );
-    xhr.addEventListener("abort", () => reject(new ApiError("上传已取消", 0)));
+    xhr.addEventListener("error", () => {
+      signal?.removeEventListener("abort", abortUpload);
+      reject(new ApiError("无法连接对象存储", 0));
+    });
+    xhr.addEventListener("abort", () => {
+      signal?.removeEventListener("abort", abortUpload);
+      reject(new ApiError("上传已取消", 0));
+    });
     xhr.send(file);
   });
 }

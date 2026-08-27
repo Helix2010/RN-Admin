@@ -8,8 +8,9 @@ import { ReleasesPage } from "./pages";
 const apiMocks = vi.hoisted(() => ({
   releases: vi.fn(),
   action: vi.fn(),
-  createReleaseUpload: vi.fn(),
-  finalizeReleaseUpload: vi.fn(),
+  createReleaseArtifactUpload: vi.fn(),
+  createReleaseFromArtifact: vi.fn(),
+  deleteReleaseArtifact: vi.fn(),
   uploadArtifactFile: vi.fn(),
 }));
 
@@ -122,22 +123,22 @@ describe("ReleasesPage actions", () => {
     );
   });
 
-  it("uploads, verifies and publishes a release in one flow", async () => {
+  it("uploads immediately, then saves a verified release without publishing it", async () => {
     apiMocks.releases.mockResolvedValue({
       items: [],
       nextCursor: null,
       hasMore: false,
     });
-    apiMocks.createReleaseUpload.mockResolvedValue({
-      release: {
-        id: "release-1",
-        tenantId: "tenant-a",
-        platform: "android",
-        version: "1.3.0",
-        buildNumber: 130,
-        status: "uploaded",
-        releaseNotes: { "zh-CN": ["修复已知问题并优化体验"] },
-        objectKey: "tenants/tenant-a/releases/release-1/application.apk",
+    apiMocks.createReleaseArtifactUpload.mockResolvedValue({
+      artifact: {
+        id: "artifact-1",
+        token: "artifact-token",
+        fileName: "dex-1.3.0.apk",
+        contentType: "application/vnd.android.package-archive",
+        size: 10,
+        objectKey:
+          "tenants/tenant-a/release-uploads/artifact-1/application.apk",
+        expiresAt: "2026-08-25T00:15:00Z",
       },
       upload: {
         method: "PUT",
@@ -148,23 +149,12 @@ describe("ReleasesPage actions", () => {
       },
     });
     apiMocks.uploadArtifactFile.mockResolvedValue(undefined);
-    apiMocks.finalizeReleaseUpload.mockResolvedValue({
-      release: {
-        id: "release-1",
-        platform: "android",
-        status: "verified",
-        fileName: "dex-1.3.0.apk",
-        fileSize: 10,
-        sha256: "a".repeat(64),
-        metadata: { versionName: "1.3.0", versionCode: 130 },
-      },
-    });
-    apiMocks.action.mockResolvedValue({
+    apiMocks.createReleaseFromArtifact.mockResolvedValue({
       release: {
         id: "release-1",
         version: "1.3.0",
         buildNumber: 130,
-        status: "active",
+        status: "verified",
       },
     });
     const user = userEvent.setup();
@@ -176,16 +166,13 @@ describe("ReleasesPage actions", () => {
       type: "application/vnd.android.package-archive",
     });
     await user.upload(screen.getByLabelText("APK 安装包文件选择"), apk);
-    await user.click(screen.getByRole("button", { name: "校验并发布到官网" }));
-    await user.click(screen.getByRole("button", { name: "确认发布" }));
 
     await waitFor(() => {
-      expect(apiMocks.createReleaseUpload).toHaveBeenCalledWith(
+      expect(apiMocks.createReleaseArtifactUpload).toHaveBeenCalledWith(
         "tenant-a",
         expect.objectContaining({
-          platform: "android",
-          version: "1.3.0",
-          buildNumber: 130,
+          fileName: "dex-1.3.0.apk",
+          size: 10,
         }),
       );
     });
@@ -193,16 +180,22 @@ describe("ReleasesPage actions", () => {
       expect.objectContaining({ method: "PUT" }),
       apk,
       expect.any(Function),
+      expect.any(AbortSignal),
     );
-    expect(apiMocks.finalizeReleaseUpload).toHaveBeenCalledWith(
-      "tenant-a",
-      "release-1",
+    await user.click(
+      await screen.findByRole("button", { name: "保存发布记录" }),
     );
-    expect(apiMocks.action).toHaveBeenCalledWith(
-      "tenant-a",
-      "release-1",
-      "publish",
-      expect.stringContaining("修复已知问题"),
+    await waitFor(() =>
+      expect(apiMocks.createReleaseFromArtifact).toHaveBeenCalledWith(
+        "tenant-a",
+        expect.objectContaining({
+          artifactToken: "artifact-token",
+          platform: "android",
+          version: "1.3.0",
+          buildNumber: 130,
+        }),
+      ),
     );
+    expect(apiMocks.action).not.toHaveBeenCalled();
   });
 });

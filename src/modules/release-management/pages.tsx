@@ -28,6 +28,7 @@ import {
   FeedbackNotice,
   FileDropzone,
   SelectField,
+  SidePanel,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -47,6 +48,11 @@ const actionDescriptions: Record<string, string> = {
   publish: "使该版本成为官网当前下载版本，同平台原活跃版本会转为历史版本。",
   pause: "停止官网继续分发该版本；安装包和发布记录保留，之后可以再次发布恢复。",
 };
+
+function formatFileSize(value: number): string {
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
 
 export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
   const query = useAdminQuery(["overview", tenantId], () =>
@@ -203,6 +209,20 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
     React.useState("修复已知问题并优化体验");
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [uploadStage, setUploadStage] = React.useState("");
+  const [uploadState, setUploadState] = React.useState<
+    | "idle"
+    | "preparing"
+    | "uploading"
+    | "uploaded"
+    | "saving"
+    | "success"
+    | "error"
+  >("idle");
+  const [artifactToken, setArtifactToken] = React.useState("");
+  const [uploadError, setUploadError] = React.useState("");
+  const uploadAbortRef = React.useRef<AbortController | null>(null);
+  const uploadCancelledRef = React.useRef(false);
+  const uploadStartRef = React.useRef(false);
   const [pendingAction, setPendingAction] = React.useState<{
     id: string;
     action: string;
@@ -210,15 +230,72 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
   const [actionReason, setActionReason] = React.useState("");
   const [actionReasonError, setActionReasonError] = React.useState("");
   const [actionConfirmOpen, setActionConfirmOpen] = React.useState(false);
-  const [uploadConfirmOpen, setUploadConfirmOpen] = React.useState(false);
-  const createMutation = useMutation({
-    mutationFn: async () => {
-      if (!file) throw new Error("请选择 APK 文件");
-      if (!version.trim() || !buildNumber.trim())
-        throw new Error("请填写版本号和构建号");
+  const uploadMutation = useMutation({
+    mutationFn: async (input: { file: File }) => {
+      const controller = new AbortController();
+      uploadAbortRef.current = controller;
+      uploadCancelledRef.current = false;
+      setUploadState("preparing");
+      setUploadError("");
       setUploadStage("正在申请安全上传地址");
       setUploadProgress(0);
-      const ticket = await adminApi.createReleaseUpload(tenantId, {
+      const ticket = await adminApi.createReleaseArtifactUpload(tenantId, {
+        fileName: input.file.name,
+        contentType:
+          input.file.type || "application/vnd.android.package-archive",
+        size: input.file.size,
+      });
+      setArtifactToken(ticket.artifact.token);
+      setUploadState("uploading");
+      setUploadStage("正在直传对象存储");
+      try {
+        await uploadArtifactFile(
+          ticket.upload,
+          input.file,
+          setUploadProgress,
+          controller.signal,
+        );
+      } catch (error) {
+        await adminApi
+          .deleteReleaseArtifact(tenantId, ticket.artifact.token)
+          .catch(() => undefined);
+        throw error;
+      }
+      return ticket.artifact;
+    },
+    onSuccess: () => {
+      uploadStartRef.current = false;
+      uploadAbortRef.current = null;
+      setUploadState("uploaded");
+      setUploadStage("文件上传完成，可以保存发布记录");
+      setUploadProgress(100);
+    },
+    onError: (error) => {
+      uploadStartRef.current = false;
+      uploadAbortRef.current = null;
+      if (uploadCancelledRef.current) {
+        uploadCancelledRef.current = false;
+        return;
+      }
+      if (artifactToken)
+        void adminApi.deleteReleaseArtifact(tenantId, artifactToken);
+      setArtifactToken("");
+      setUploadState("error");
+      setUploadError(error.message);
+      setUploadStage("上传未完成");
+    },
+  });
+  const saveReleaseMutation = useMutation({
+    mutationFn: async () => {
+      if (!artifactToken) throw new Error("请先完成文件上传");
+      if (!version.trim() || Number(buildNumber) < 1)
+        throw new Error("请填写有效的版本号和构建号");
+      if (releaseNotes.trim().length < 3)
+        throw new Error("请填写至少 3 个字符的发布说明");
+      setUploadState("saving");
+      setUploadStage("正在校验安装包并保存发布记录");
+      const result = await adminApi.createReleaseFromArtifact(tenantId, {
+        artifactToken,
         platform,
         version: version.trim(),
         buildNumber: Number(buildNumber),
@@ -229,38 +306,24 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             .map((item) => item.trim())
             .filter(Boolean),
         },
-        fileName: file.name,
-        contentType: file.type || "application/vnd.android.package-archive",
-        size: file.size,
       });
-      setUploadStage("正在直传对象存储");
-      await uploadArtifactFile(ticket.upload, file, setUploadProgress);
-      setUploadStage("服务端正在校验包身份与签名");
-      await adminApi.finalizeReleaseUpload(tenantId, ticket.release.id);
-      const auditReason = releaseNotes.trim().slice(0, 400);
-      if (auditReason.length < 3) {
-        throw new Error("请填写至少 3 个字符的发布说明");
-      }
-      setUploadStage("正在发布到官网");
-      const activated = await adminApi.action(
-        tenantId,
-        ticket.release.id,
-        "publish",
-        auditReason,
-      );
-      return activated.release;
+      return result.release;
     },
-    onSuccess: (release) => {
+    onSuccess: () => {
+      setUploadState("success");
       setShowCreate(false);
-      setUploadConfirmOpen(false);
       setFile(null);
+      setArtifactToken("");
       setUploadProgress(0);
       setUploadStage("");
-      setPublishedRelease(release);
       void queryClient.invalidateQueries({ queryKey: ["releases", tenantId] });
       void queryClient.invalidateQueries({ queryKey: ["overview", tenantId] });
     },
-    onError: () => setUploadConfirmOpen(false),
+    onError: (error) => {
+      setUploadState("uploaded");
+      setUploadStage("文件已上传，发布记录保存失败，可修改后重试");
+      setUploadError(error.message);
+    },
   });
   const mutation = useMutation({
     mutationFn: async ({
@@ -284,19 +347,24 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
     },
     onError: () => setActionConfirmOpen(false),
   });
-  const actionFeedback = createMutation.isError
-    ? {
-        kind: "error" as const,
-        message: `创建失败：${createMutation.error.message}`,
-        dismiss: () => createMutation.reset(),
-      }
-    : mutation.isError
+  const actionFeedback =
+    uploadMutation.isError || saveReleaseMutation.isError
       ? {
           kind: "error" as const,
-          message: `操作失败：${mutation.error.message}`,
-          dismiss: () => mutation.reset(),
+          message: `操作失败：${uploadError || uploadMutation.error?.message || saveReleaseMutation.error?.message || "请重试"}`,
+          dismiss: () => {
+            uploadMutation.reset();
+            saveReleaseMutation.reset();
+            setUploadError("");
+          },
         }
-      : null;
+      : mutation.isError
+        ? {
+            kind: "error" as const,
+            message: `操作失败：${mutation.error.message}`,
+            dismiss: () => mutation.reset(),
+          }
+        : null;
   const shareUrl = shareRelease
     ? publicApiUrl(`/v1/public/releases/${shareRelease.id}/download`)
     : "";
@@ -325,6 +393,11 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
       setLinkCopied(true);
       window.setTimeout(() => setLinkCopied(false), 1800);
     });
+  };
+  const startUpload = (nextFile = file) => {
+    if (uploadStartRef.current || uploadMutation.isPending || !nextFile) return;
+    uploadStartRef.current = true;
+    uploadMutation.mutate({ file: nextFile });
   };
   if (query.isLoading) return <EmptyState title="正在加载发布列表" />;
   if (query.isError)
@@ -355,8 +428,27 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
     if (reason.length < 3) return;
     mutation.mutate({ ...pendingAction, reason });
   };
-  const confirmUpload = () => {
-    createMutation.mutate();
+  const cancelUpload = () => {
+    uploadCancelledRef.current = true;
+    uploadStartRef.current = false;
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    uploadMutation.reset();
+    setUploadState("idle");
+    setUploadStage("");
+    setUploadProgress(0);
+    if (artifactToken)
+      void adminApi.deleteReleaseArtifact(tenantId, artifactToken);
+    setArtifactToken("");
+  };
+  const retryUpload = () => {
+    if (artifactToken)
+      void adminApi.deleteReleaseArtifact(tenantId, artifactToken);
+    uploadMutation.reset();
+    setUploadState("idle");
+    setUploadError("");
+    setArtifactToken("");
+    window.setTimeout(() => startUpload(), 0);
   };
   return (
     <>
@@ -500,195 +592,243 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
           </section>
         </div>
       )}
-      {showCreate && (
-        <div className="card" style={{ marginBottom: 18 }}>
-          <div className="card-header">
-            <h2>上传安装包</h2>
-            <Button variant="ghost" onClick={() => setShowCreate(false)}>
-              取消
-            </Button>
-          </div>
-          <div className="card-body">
-            <div className="release-upload-grid">
-              <div className="form-grid form-grid-3">
-                <SelectField
-                  label="平台"
-                  value={platform}
-                  disabled={createMutation.isPending}
-                  onChange={(event) => setPlatform(event.target.value)}
-                >
-                  <option value="android">Android</option>
-                  <option value="ios">iOS</option>
-                  <option value="harmony">HarmonyOS</option>
-                </SelectField>
-                <label className="form-field">
-                  <span>版本号</span>
-                  <input
-                    className="input"
-                    placeholder="1.2.0"
-                    value={version}
-                    onChange={(event) => setVersion(event.target.value)}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>构建号</span>
-                  <input
-                    className="input"
-                    type="number"
-                    min={1}
-                    placeholder="120"
-                    value={buildNumber}
-                    onChange={(event) => setBuildNumber(event.target.value)}
-                  />
-                </label>
-              </div>
-              <div className="form-field">
-                <span>{platform === "android" ? "APK 安装包" : "安装包"}</span>
-                <FileDropzone
-                  label={platform === "android" ? "APK 安装包" : "安装包"}
-                  file={file}
-                  accept={
-                    platform === "android"
-                      ? ".apk,application/vnd.android.package-archive"
-                      : undefined
-                  }
-                  disabled={createMutation.isPending}
-                  hint={
-                    platform === "android"
-                      ? "支持 APK，服务端会校验版本号、构建号与签名"
-                      : "服务端会校验文件大小、哈希与版本身份"
-                  }
-                  onFileChange={setFile}
-                />
-              </div>
-              <label className="form-field release-notes-field">
-                <span>发布说明</span>
-                <textarea
-                  className="input textarea"
-                  placeholder="例如：修复行情刷新问题，优化钱包连接体验"
-                  value={releaseNotes}
-                  disabled={createMutation.isPending}
-                  onChange={(event) => setReleaseNotes(event.target.value)}
-                />
-              </label>
-              <div className="release-upload-actions">
-                <Button
-                  disabled={
-                    createMutation.isPending ||
-                    !file ||
-                    releaseNotes.trim().length < 3 ||
-                    !version.trim() ||
-                    Number(buildNumber) < 1
-                  }
-                  onClick={() => {
-                    setUploadConfirmOpen(true);
-                  }}
-                >
-                  <CloudUpload size={16} />
-                  校验并发布到官网
-                </Button>
-              </div>
-              {createMutation.isPending && (
-                <div className="upload-progress-panel">
-                  <div>
-                    <span>{uploadStage}</span>
-                    <strong>{uploadProgress}%</strong>
-                  </div>
-                  <div className="progress">
-                    <span style={{ width: `${uploadProgress}%` }} />
-                  </div>
-                </div>
-              )}
-              <details
-                className="advanced-release-options"
-                open={advancedOpen}
-                onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-              >
-                <summary>高级选项</summary>
-                <div className="form-grid form-grid-3">
-                  <label className="form-field">
-                    <span>Runtime Version</span>
-                    <input
-                      className="input"
-                      value={runtimeVersion}
-                      disabled={createMutation.isPending}
-                      onChange={(event) =>
-                        setRuntimeVersion(event.target.value)
-                      }
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>发布模式</span>
-                    <input
-                      className="input"
-                      value="校验通过后全量发布"
-                      disabled
-                    />
-                  </label>
-                </div>
-              </details>
-            </div>
-          </div>
-        </div>
-      )}
-      {pendingAction && (
-        <Card className="action-confirmation">
-          <div className="card-header">
-            <div>
-              <h2>
-                确认
-                {actionLabels[pendingAction.action] ?? pendingAction.action}
-              </h2>
-              <p>
-                {actionDescriptions[pendingAction.action] ??
-                  "请填写可审计的操作原因。"}
-              </p>
-            </div>
+      <SidePanel
+        open={showCreate}
+        title="上传安装包"
+        description="选择文件后立即上传；保存发布记录时校验包身份，正式发布仍从列表操作。"
+        onClose={() => {
+          if (!uploadMutation.isPending && !saveReleaseMutation.isPending) {
+            cancelUpload();
+            setShowCreate(false);
+          }
+        }}
+        footer={
+          <>
             <Button
               variant="ghost"
+              disabled={
+                uploadMutation.isPending || saveReleaseMutation.isPending
+              }
               onClick={() => {
-                setPendingAction(null);
-                setActionConfirmOpen(false);
-                setActionReason("");
-                setActionReasonError("");
+                cancelUpload();
+                setShowCreate(false);
               }}
             >
               取消
             </Button>
-          </div>
-          <div className="card-body">
-            <textarea
-              className="input textarea"
-              aria-label="操作原因"
-              aria-invalid={Boolean(actionReasonError)}
-              aria-describedby={
-                actionReasonError ? "release-action-reason-error" : undefined
+            <Button
+              disabled={
+                uploadMutation.isPending ||
+                saveReleaseMutation.isPending ||
+                uploadState !== "uploaded" ||
+                !version.trim() ||
+                Number(buildNumber) < 1 ||
+                releaseNotes.trim().length < 3
               }
-              placeholder="至少 3 个字符，例如：已完成测试环境安装验证"
-              value={actionReason}
-              onChange={(event) => {
-                setActionReason(event.target.value);
-                if (actionReasonError) setActionReasonError("");
+              onClick={() => saveReleaseMutation.mutate()}
+            >
+              <CloudUpload size={16} />
+              保存发布记录
+            </Button>
+          </>
+        }
+      >
+        <div className="release-upload-grid">
+          <div className="form-grid form-grid-3">
+            <SelectField
+              label="平台"
+              value={platform}
+              disabled={saveReleaseMutation.isPending}
+              onChange={(event) => setPlatform(event.target.value)}
+            >
+              <option value="android">Android</option>
+              <option value="ios">iOS</option>
+              <option value="harmony">HarmonyOS</option>
+            </SelectField>
+            <label className="form-field">
+              <span>版本号</span>
+              <input
+                className="input"
+                placeholder="1.2.0"
+                value={version}
+                disabled={saveReleaseMutation.isPending}
+                onChange={(event) => setVersion(event.target.value)}
+              />
+            </label>
+            <label className="form-field">
+              <span>构建号</span>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                placeholder="120"
+                value={buildNumber}
+                disabled={saveReleaseMutation.isPending}
+                onChange={(event) => setBuildNumber(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="form-field">
+            <span>{platform === "android" ? "APK 安装包" : "安装包"}</span>
+            <FileDropzone
+              label={platform === "android" ? "APK 安装包" : "安装包"}
+              file={file}
+              accept={
+                platform === "android"
+                  ? ".apk,application/vnd.android.package-archive"
+                  : undefined
+              }
+              disabled={uploadState !== "idle" || saveReleaseMutation.isPending}
+              hint={
+                platform === "android"
+                  ? "支持 APK，服务端会校验版本号、构建号与签名"
+                  : "服务端会校验文件大小、哈希与版本身份"
+              }
+              onFileChange={(nextFile) => {
+                uploadAbortRef.current?.abort();
+                if (artifactToken)
+                  void adminApi.deleteReleaseArtifact(tenantId, artifactToken);
+                uploadMutation.reset();
+                setUploadError("");
+                setArtifactToken("");
+                setUploadProgress(0);
+                setUploadStage("");
+                setUploadState("idle");
+                setFile(nextFile);
+                if (nextFile) startUpload(nextFile);
               }}
             />
-            {actionReasonError && (
-              <small className="field-error" id="release-action-reason-error">
-                {actionReasonError}
-              </small>
-            )}
-            <div className="toolbar action-confirmation-footer">
-              <span className="muted">原因会与操作者、请求 ID 一起记录</span>
-              <Button
-                variant="primary"
-                disabled={actionReason.trim().length < 3 || mutation.isPending}
-                onClick={requestActionConfirmation}
-              >
-                继续确认
-              </Button>
-            </div>
           </div>
-        </Card>
-      )}
+          <label className="form-field release-notes-field">
+            <span>发布说明</span>
+            <textarea
+              className="input textarea"
+              placeholder="例如：修复行情刷新问题，优化钱包连接体验"
+              value={releaseNotes}
+              disabled={saveReleaseMutation.isPending}
+              onChange={(event) => setReleaseNotes(event.target.value)}
+            />
+          </label>
+          <div className="release-upload-actions">
+            <span className="muted">
+              {!file
+                ? "选择文件后立即开始上传，期间可继续填写版本信息"
+                : uploadState === "uploaded"
+                  ? "安装包已上传，可从底部按钮保存发布记录"
+                  : "文件选择后会自动开始上传"}
+            </span>
+            {(uploadState === "preparing" || uploadState === "uploading") && (
+              <Button variant="ghost" onClick={cancelUpload}>
+                取消上传
+              </Button>
+            )}
+            {uploadState === "error" && (
+              <Button variant="ghost" onClick={retryUpload}>
+                重新上传
+              </Button>
+            )}
+          </div>
+          {file && uploadState !== "idle" && (
+            <div className="upload-progress-panel">
+              <div>
+                <span>
+                  {uploadStage || "等待上传"}
+                  {uploadError && (
+                    <small className="field-error"> · {uploadError}</small>
+                  )}
+                </span>
+                <strong>{uploadProgress}%</strong>
+              </div>
+              <div className="progress">
+                <span style={{ width: `${uploadProgress}%` }} />
+              </div>
+              <small className="muted">
+                {uploadState === "uploaded"
+                  ? "文件已上传，保存发布记录时服务端会校验包身份并写入列表。"
+                  : uploadState === "error"
+                    ? "文件仍保留在当前表单中，可直接重新上传。"
+                    : `${file.name} · ${formatFileSize((file.size * uploadProgress) / 100)} / ${formatFileSize(file.size)}`}
+              </small>
+            </div>
+          )}
+          <details
+            className="advanced-release-options"
+            open={advancedOpen}
+            onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+          >
+            <summary>高级选项</summary>
+            <div className="form-grid form-grid-3">
+              <label className="form-field">
+                <span>Runtime Version</span>
+                <input
+                  className="input"
+                  value={runtimeVersion}
+                  disabled={saveReleaseMutation.isPending}
+                  onChange={(event) => setRuntimeVersion(event.target.value)}
+                />
+              </label>
+              <label className="form-field">
+                <span>发布模式</span>
+                <input className="input" value="校验通过后全量发布" disabled />
+              </label>
+            </div>
+          </details>
+        </div>
+      </SidePanel>
+      <SidePanel
+        open={pendingAction !== null}
+        title={
+          pendingAction
+            ? (actionLabels[pendingAction.action] ?? pendingAction.action)
+            : "操作"
+        }
+        description={
+          pendingAction ? actionDescriptions[pendingAction.action] : undefined
+        }
+        onClose={() => {
+          setPendingAction(null);
+          setActionConfirmOpen(false);
+          setActionReason("");
+          setActionReasonError("");
+        }}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingAction(null)}>
+              取消
+            </Button>
+            <Button
+              variant={pendingAction?.action === "pause" ? "danger" : "primary"}
+              disabled={actionReason.trim().length < 3 || mutation.isPending}
+              onClick={requestActionConfirmation}
+            >
+              继续确认
+            </Button>
+          </>
+        }
+      >
+        <div className="side-panel-form">
+          <textarea
+            className="input textarea"
+            aria-label="操作原因"
+            aria-invalid={Boolean(actionReasonError)}
+            aria-describedby={
+              actionReasonError ? "release-action-reason-error" : undefined
+            }
+            placeholder="至少 3 个字符，例如：已完成测试环境安装验证"
+            value={actionReason}
+            onChange={(event) => {
+              setActionReason(event.target.value);
+              if (actionReasonError) setActionReasonError("");
+            }}
+          />
+          {actionReasonError && (
+            <small className="field-error" id="release-action-reason-error">
+              {actionReasonError}
+            </small>
+          )}
+          <span className="muted">原因会与操作者、请求 ID 一起记录。</span>
+        </div>
+      </SidePanel>
       <ConfirmDialog
         open={actionConfirmOpen && pendingAction !== null}
         title={`确认${pendingAction ? (actionLabels[pendingAction.action] ?? pendingAction.action) : "操作"}？`}
@@ -702,7 +842,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             ? `确认${actionLabels[pendingAction.action] ?? pendingAction.action}`
             : "确认操作"
         }
-        tone="default"
+        tone={pendingAction?.action === "pause" ? "danger" : "default"}
         loading={mutation.isPending}
         onCancel={() => setActionConfirmOpen(false)}
         onConfirm={confirmAction}
@@ -710,23 +850,6 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
         <div className="dialog-detail-list">
           <span>操作原因：{actionReason.trim() || "未填写"}</span>
           <span>该动作由服务端状态机最终校验</span>
-        </div>
-      </ConfirmDialog>
-      <ConfirmDialog
-        open={uploadConfirmOpen}
-        title="上传并发布到官网？"
-        description="服务端将校验文件、版本、平台信息和安装包身份，校验通过后直接生成官网安装链接。"
-        confirmLabel="确认发布"
-        loading={createMutation.isPending}
-        onCancel={() => setUploadConfirmOpen(false)}
-        onConfirm={confirmUpload}
-      >
-        <div className="dialog-detail-list">
-          <span>平台：{platform}</span>
-          <span>
-            版本：{version || "未填写"} · build {buildNumber || "-"}
-          </span>
-          <span>文件：{file?.name || "未选择"}</span>
         </div>
       </ConfirmDialog>
       <Card className="table-wrap">
