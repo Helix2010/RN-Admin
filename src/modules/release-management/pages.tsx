@@ -10,9 +10,13 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Pause,
+  Play,
   QrCode,
+  RotateCcw,
   ShieldCheck,
   X,
+  XCircle,
 } from "lucide-react";
 import {
   adminApi,
@@ -1125,48 +1129,75 @@ export function ReleasesPage({
               </>
             )}
           </label>
-          <div className="release-upload-actions">
-            <span className="muted">
-              {!file
-                ? "选择文件后立即开始上传，期间可继续填写版本信息"
-                : uploadState === "uploaded"
-                  ? "安装包已上传，可从底部按钮保存发布记录"
-                  : "文件选择后会自动开始上传"}
-            </span>
-            {uploadState === "uploading" && (
-              <>
-                <Button variant="ghost" onClick={pauseUpload}>
-                  暂停上传
-                </Button>
-                <Button variant="ghost" onClick={cancelUpload}>
-                  取消上传
-                </Button>
-              </>
-            )}
-            {uploadState === "paused" && (
-              <>
-                <Button onClick={resumeUpload}>继续上传</Button>
-                <Button variant="ghost" onClick={cancelUpload}>
-                  取消上传
-                </Button>
-              </>
-            )}
-            {uploadState === "error" && (
-              <Button variant="ghost" onClick={retryUpload}>
-                重新上传
-              </Button>
-            )}
-          </div>
           {file && uploadState !== "idle" && (
             <div className="upload-progress-panel">
               <div>
-                <span>
-                  {uploadStage || "等待上传"}
-                  {uploadError && (
-                    <small className="field-error"> · {uploadError}</small>
-                  )}
+                <span className="upload-progress-label">
+                  <span>
+                    {uploadStage || "等待上传"}
+                    {uploadError && (
+                      <small className="field-error"> · {uploadError}</small>
+                    )}
+                  </span>
+                  <span className="upload-progress-actions">
+                    {uploadState === "uploading" && (
+                      <>
+                        <button
+                          className="upload-icon-action"
+                          type="button"
+                          title="暂停上传"
+                          aria-label="暂停上传"
+                          onClick={pauseUpload}
+                        >
+                          <Pause size={15} aria-hidden="true" />
+                        </button>
+                        <button
+                          className="upload-icon-action is-danger"
+                          type="button"
+                          title="取消上传"
+                          aria-label="取消上传"
+                          onClick={cancelUpload}
+                        >
+                          <XCircle size={16} aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
+                    {uploadState === "paused" && (
+                      <>
+                        <button
+                          className="upload-icon-action is-primary"
+                          type="button"
+                          title="继续上传"
+                          aria-label="继续上传"
+                          onClick={resumeUpload}
+                        >
+                          <Play size={15} aria-hidden="true" />
+                        </button>
+                        <button
+                          className="upload-icon-action is-danger"
+                          type="button"
+                          title="取消上传"
+                          aria-label="取消上传"
+                          onClick={cancelUpload}
+                        >
+                          <XCircle size={16} aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
+                    {uploadState === "error" && (
+                      <button
+                        className="upload-icon-action is-primary"
+                        type="button"
+                        title="重试上传"
+                        aria-label="重试上传"
+                        onClick={retryUpload}
+                      >
+                        <RotateCcw size={15} aria-hidden="true" />
+                      </button>
+                    )}
+                  </span>
+                  <strong>{uploadProgress}%</strong>
                 </span>
-                <strong>{uploadProgress}%</strong>
               </div>
               <div
                 className="progress"

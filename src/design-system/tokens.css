@@ -505,7 +505,6 @@ button {
   grid-template-columns: 1fr;
 }
 .release-notes-field,
-.release-upload-actions,
 .upload-progress-panel {
   grid-column: 1 / -1;
 }
@@ -516,15 +515,59 @@ button {
   border-radius: 12px;
   background: var(--panel-2);
 }
-.release-upload-actions {
-  display: flex;
-  justify-content: flex-end;
-}
 .upload-progress-panel > div:first-child {
   justify-content: space-between;
   margin-bottom: 10px;
   color: var(--muted);
   font-size: 12px;
+}
+.upload-progress-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+}
+.upload-progress-label > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-progress-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+.upload-icon-action {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel);
+  cursor: pointer;
+  transition: 140ms ease;
+}
+.upload-icon-action:hover {
+  color: var(--text);
+  border-color: var(--brand);
+  background: var(--hover);
+}
+.upload-icon-action.is-primary:hover {
+  color: var(--brand);
+}
+.upload-icon-action.is-danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.upload-icon-action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .upload-progress-panel strong {
   color: var(--brand);
