@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ReleasesPage } from "./pages";
+import { OtaPage, ReleasesPage } from "./pages";
 
 const apiMocks = vi.hoisted(() => ({
   releases: vi.fn(),
@@ -12,6 +12,12 @@ const apiMocks = vi.hoisted(() => ({
   createReleaseFromArtifact: vi.fn(),
   deleteReleaseArtifact: vi.fn(),
   uploadArtifactFile: vi.fn(),
+  otaReleases: vi.fn(),
+  otaBaseReleases: vi.fn(),
+  createOtaArtifactUpload: vi.fn(),
+  deleteOtaArtifact: vi.fn(),
+  createOtaRelease: vi.fn(),
+  otaAction: vi.fn(),
 }));
 
 vi.mock("../../core/api", () => ({
@@ -40,6 +46,17 @@ function renderPage() {
         tenantName="Tenant A"
         onNavigate={vi.fn()}
       />
+    </QueryClientProvider>,
+  );
+}
+
+function renderOtaPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <OtaPage tenantId="tenant-a" tenantName="Tenant A" onNavigate={vi.fn()} />
     </QueryClientProvider>,
   );
 }
@@ -197,5 +214,134 @@ describe("ReleasesPage actions", () => {
       ),
     );
     expect(apiMocks.action).not.toHaveBeenCalled();
+  });
+});
+
+describe("OtaPage", () => {
+  it("uploads after a base APK is selected and saves a verified draft", async () => {
+    apiMocks.otaReleases.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+    });
+    apiMocks.otaBaseReleases.mockResolvedValue({
+      items: [
+        {
+          id: "release-base",
+          platform: "android",
+          version: "1.1.1",
+          buildNumber: 5,
+          runtimeVersion: "fingerprint-a",
+          status: "active",
+        },
+      ],
+    });
+    apiMocks.createOtaArtifactUpload.mockResolvedValue({
+      artifact: {
+        id: "ota-artifact",
+        token: "ota-token",
+        fileName: "ota.zip",
+        contentType: "application/zip",
+        size: 10,
+        objectKey: "tenants/tenant-a/ota-uploads/ota-artifact.zip",
+        expiresAt: "2026-08-28T01:00:00Z",
+      },
+      upload: {
+        method: "PUT",
+        url: "https://storage.example/ota",
+        headers: { "content-type": "application/zip" },
+        expiresAt: "2026-08-28T01:00:00Z",
+        requiresCredentials: true,
+      },
+    });
+    apiMocks.uploadArtifactFile.mockResolvedValue(undefined);
+    apiMocks.createOtaRelease.mockResolvedValue({
+      release: { id: "ota-1", status: "verified" },
+    });
+    const user = userEvent.setup();
+    renderOtaPage();
+
+    await user.click(await screen.findByRole("button", { name: "上传 OTA" }));
+    await user.selectOptions(
+      await screen.findByLabelText("基线 APK"),
+      "release-base",
+    );
+    const otaFile = new File(["ota-package"], "ota.zip", {
+      type: "application/zip",
+    });
+    await user.upload(screen.getByLabelText("OTA 资源包文件选择"), otaFile);
+
+    await waitFor(() =>
+      expect(apiMocks.createOtaArtifactUpload).toHaveBeenCalledWith(
+        "tenant-a",
+        expect.objectContaining({
+          baseReleaseId: "release-base",
+          channel: "production",
+          fileName: "ota.zip",
+        }),
+      ),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "保存为待发布" }),
+    );
+    await waitFor(() =>
+      expect(apiMocks.createOtaRelease).toHaveBeenCalledWith(
+        "tenant-a",
+        expect.objectContaining({
+          artifactToken: "ota-token",
+          baseReleaseId: "release-base",
+          channel: "production",
+        }),
+      ),
+    );
+    expect(apiMocks.otaAction).not.toHaveBeenCalled();
+  });
+
+  it("publishes from the list only after reason and custom confirmation", async () => {
+    apiMocks.otaBaseReleases.mockResolvedValue({ items: [] });
+    apiMocks.otaReleases.mockResolvedValue({
+      items: [
+        {
+          id: "ota-1",
+          baseReleaseId: "release-base",
+          baseRelease: {
+            id: "release-base",
+            platform: "android",
+            version: "1.1.1",
+            buildNumber: 5,
+            runtimeVersion: "fingerprint-a",
+            status: "active",
+          },
+          platform: "android",
+          channel: "production",
+          runtimeVersion: "fingerprint-a",
+          revision: 1,
+          updateId: "update-1",
+          status: "verified",
+          releaseNotes: { "zh-CN": ["修复问题"] },
+          createdAt: "2026-08-28T00:00:00Z",
+          updatedAt: "2026-08-28T00:00:00Z",
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+    apiMocks.otaAction.mockResolvedValue({
+      release: { id: "ota-1", status: "active" },
+    });
+    const user = userEvent.setup();
+    renderOtaPage();
+
+    await user.click(await screen.findByRole("button", { name: "发布 OTA" }));
+    await user.type(screen.getByLabelText("操作原因"), "真机验证已经完成");
+    await user.click(screen.getByRole("button", { name: "继续确认" }));
+    await user.click(screen.getByRole("button", { name: "确认操作" }));
+
+    expect(apiMocks.otaAction).toHaveBeenCalledWith(
+      "tenant-a",
+      "ota-1",
+      "publish",
+      "真机验证已经完成",
+    );
   });
 });

@@ -959,3 +959,589 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
     </>
   );
 }
+
+type OtaUploadState =
+  "idle" | "preparing" | "uploading" | "uploaded" | "saving" | "error";
+
+export function OtaPage({ tenantId }: AdminPageProps) {
+  const queryClient = useQueryClient();
+  const otaQuery = useAdminQuery(["ota-releases", tenantId], () =>
+    adminApi.otaReleases(tenantId),
+  );
+  const [showCreate, setShowCreate] = React.useState(false);
+  const [platform, setPlatform] = React.useState<"android" | "ios">("android");
+  const [channel, setChannel] = React.useState("production");
+  const [baseReleaseId, setBaseReleaseId] = React.useState("");
+  const baseQuery = useAdminQuery(
+    ["ota-base-releases", tenantId, platform],
+    () => adminApi.otaBaseReleases(tenantId, platform),
+  );
+  const [file, setFile] = React.useState<File | null>(null);
+  const [releaseNotes, setReleaseNotes] =
+    React.useState("修复已知问题并优化体验");
+  const [sourceCommitSha, setSourceCommitSha] = React.useState("");
+  const [uploadState, setUploadState] = React.useState<OtaUploadState>("idle");
+  const [uploadProgress, setUploadProgress] = React.useState(0);
+  const [uploadStage, setUploadStage] = React.useState("");
+  const [uploadError, setUploadError] = React.useState("");
+  const [artifactToken, setArtifactToken] = React.useState("");
+  const [pendingAction, setPendingAction] = React.useState<{
+    id: string;
+    action: "publish" | "pause";
+  } | null>(null);
+  const [reason, setReason] = React.useState("");
+  const [reasonError, setReasonError] = React.useState("");
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const abortRef = React.useRef<AbortController | null>(null);
+  const uploadCancelledRef = React.useRef(false);
+  const uploadStartedRef = React.useRef(false);
+  const uploadMutation = useMutation({
+    mutationFn: async (nextFile: File) => {
+      const base = baseQuery.data?.items.find(
+        (item) => item.id === baseReleaseId,
+      );
+      if (!base) throw new Error("请先选择有效的基线 APK");
+      const controller = new AbortController();
+      abortRef.current = controller;
+      uploadCancelledRef.current = false;
+      setUploadState("preparing");
+      setUploadStage("正在申请安全上传地址");
+      setUploadError("");
+      setUploadProgress(0);
+      const ticket = await adminApi.createOtaArtifactUpload(tenantId, {
+        fileName: nextFile.name,
+        contentType: nextFile.type || "application/zip",
+        size: nextFile.size,
+        baseReleaseId: base.id,
+        channel,
+      });
+      setArtifactToken(ticket.artifact.token);
+      setUploadState("uploading");
+      setUploadStage("正在上传 OTA 资源");
+      try {
+        await uploadArtifactFile(
+          ticket.upload,
+          nextFile,
+          setUploadProgress,
+          controller.signal,
+        );
+      } catch (error) {
+        await adminApi
+          .deleteOtaArtifact(tenantId, ticket.artifact.token)
+          .catch(() => undefined);
+        throw error;
+      }
+      return ticket.artifact.token;
+    },
+    onSuccess: (token) => {
+      setArtifactToken(token);
+      setUploadState("uploaded");
+      setUploadProgress(100);
+      setUploadStage("资源上传完成，可以保存为待发布");
+      uploadStartedRef.current = false;
+      abortRef.current = null;
+    },
+    onError: (error) => {
+      uploadStartedRef.current = false;
+      abortRef.current = null;
+      setArtifactToken("");
+      if (uploadCancelledRef.current) {
+        uploadCancelledRef.current = false;
+        return;
+      }
+      setUploadState("error");
+      setUploadStage("上传未完成");
+      setUploadError(error instanceof Error ? error.message : "OTA 上传失败");
+    },
+  });
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (!artifactToken) throw new Error("请先上传 OTA 资源");
+      if (!baseReleaseId) throw new Error("请选择基线 APK");
+      if (releaseNotes.trim().length < 3)
+        throw new Error("请填写至少 3 个字符的发布说明");
+      setUploadState("saving");
+      setUploadStage("正在校验 Manifest 和资源并保存草稿");
+      return adminApi.createOtaRelease(tenantId, {
+        artifactToken,
+        baseReleaseId,
+        channel,
+        releaseNotes: {
+          "zh-CN": releaseNotes
+            .split("\n")
+            .map((item) => item.trim())
+            .filter(Boolean),
+        },
+        ...(sourceCommitSha.trim()
+          ? { sourceCommitSha: sourceCommitSha.trim() }
+          : {}),
+      });
+    },
+    onSuccess: () => {
+      setShowCreate(false);
+      resetForm();
+      void queryClient.invalidateQueries({
+        queryKey: ["ota-releases", tenantId],
+      });
+    },
+    onError: (error) => {
+      setUploadState("uploaded");
+      setUploadStage("资源已上传，保存失败，可修改后重试");
+      setUploadError(error instanceof Error ? error.message : "保存 OTA 失败");
+    },
+  });
+  const actionMutation = useMutation({
+    mutationFn: ({
+      id,
+      action,
+      actionReason,
+    }: {
+      id: string;
+      action: "publish" | "pause";
+      actionReason: string;
+    }) => adminApi.otaAction(tenantId, id, action, actionReason),
+    onSuccess: () => {
+      setPendingAction(null);
+      setConfirmOpen(false);
+      setReason("");
+      void queryClient.invalidateQueries({
+        queryKey: ["ota-releases", tenantId],
+      });
+    },
+  });
+  const resetForm = () => {
+    abortRef.current?.abort();
+    setFile(null);
+    setArtifactToken("");
+    setUploadState("idle");
+    setUploadProgress(0);
+    setUploadStage("");
+    setUploadError("");
+    setBaseReleaseId("");
+    setSourceCommitSha("");
+    uploadMutation.reset();
+    saveMutation.reset();
+  };
+  const closeCreate = () => {
+    if (uploadMutation.isPending || saveMutation.isPending) return;
+    if (artifactToken)
+      void adminApi
+        .deleteOtaArtifact(tenantId, artifactToken)
+        .catch(() => undefined);
+    resetForm();
+    setShowCreate(false);
+  };
+  const startUpload = (nextFile: File | null) => {
+    if (
+      !nextFile ||
+      uploadStartedRef.current ||
+      uploadMutation.isPending ||
+      !baseReleaseId
+    )
+      return;
+    uploadStartedRef.current = true;
+    uploadMutation.mutate(nextFile);
+  };
+  const feedback =
+    uploadMutation.isError || saveMutation.isError || actionMutation.isError
+      ? (uploadMutation.error ?? saveMutation.error ?? actionMutation.error)
+      : null;
+  const otaReleases = otaQuery.data?.items ?? [];
+  return (
+    <>
+      {feedback && (
+        <FeedbackNotice
+          kind="error"
+          placement="viewport"
+          message={feedback instanceof Error ? feedback.message : "操作失败"}
+          onDismiss={() => {
+            uploadMutation.reset();
+            saveMutation.reset();
+            actionMutation.reset();
+          }}
+        />
+      )}
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">OTA updates</div>
+          <h1>OTA 热更新</h1>
+          <p>选择基线 APK 后上传 OTA 资源，校验通过后从列表单独发布。</p>
+        </div>
+        <Button
+          onClick={() => {
+            resetForm();
+            setShowCreate(true);
+          }}
+        >
+          <CloudUpload size={16} />
+          上传 OTA
+        </Button>
+      </div>
+      {otaQuery.isLoading ? (
+        <EmptyState title="正在加载 OTA 发布记录" />
+      ) : otaQuery.isError ? (
+        <div className="error-banner">
+          无法加载 OTA：{otaQuery.error.message}
+        </div>
+      ) : otaReleases.length === 0 ? (
+        <Card>
+          <EmptyState
+            title="还没有 OTA 发布"
+            detail="上传第一个 OTA 包开始热更新。"
+          />
+        </Card>
+      ) : (
+        <Card className="table-wrap">
+          <div className="card-header">
+            <div>
+              <h2>OTA 发布记录</h2>
+              <p style={{ fontSize: 12, marginTop: 4 }}>
+                每条 OTA 必须兼容所选基线 APK 的 Runtime Version。
+              </p>
+            </div>
+            <SelectField
+              aria-label="OTA 通道"
+              value={channel}
+              onChange={(e) => setChannel(e.target.value)}
+            >
+              <option value="production">production</option>
+              <option value="staging">staging</option>
+            </SelectField>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>序号</th>
+                <th>基线 APK</th>
+                <th>平台 / 通道</th>
+                <th>Runtime / Revision</th>
+                <th>状态</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {otaReleases.map((release, index) => (
+                <tr key={release.id}>
+                  <td className="muted mono">{index + 1}</td>
+                  <td>
+                    <strong>
+                      v
+                      {release.baseRelease?.version ??
+                        release.baseVersion ??
+                        "-"}
+                    </strong>
+                    <div className="muted mono">
+                      build{" "}
+                      {release.baseRelease?.buildNumber ??
+                        release.baseBuildNumber ??
+                        "-"}
+                    </div>
+                  </td>
+                  <td>
+                    {release.platform}
+                    <div className="muted">{release.channel}</div>
+                  </td>
+                  <td className="mono">
+                    {release.runtimeVersion}
+                    <div className="muted">revision {release.revision}</div>
+                  </td>
+                  <td>
+                    <StatusPill status={release.status} />
+                  </td>
+                  <td className="muted">
+                    {new Date(release.updatedAt).toLocaleString("zh-CN", {
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </td>
+                  <td>
+                    <div className="toolbar">
+                      {release.status === "verified" && (
+                        <Button
+                          onClick={() => {
+                            setPendingAction({
+                              id: release.id,
+                              action: "publish",
+                            });
+                            setReason("");
+                          }}
+                        >
+                          发布 OTA
+                        </Button>
+                      )}
+                      {release.status === "active" && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setPendingAction({
+                              id: release.id,
+                              action: "pause",
+                            });
+                            setReason("");
+                          }}
+                        >
+                          暂停
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+      <SidePanel
+        open={showCreate}
+        title="上传 OTA 热更新"
+        description="先选择兼容的基线 APK，再选择文件立即上传；保存只生成待发布记录，不会自动生效。"
+        onClose={closeCreate}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              disabled={uploadMutation.isPending || saveMutation.isPending}
+              onClick={closeCreate}
+            >
+              取消
+            </Button>
+            <Button
+              disabled={
+                uploadMutation.isPending ||
+                saveMutation.isPending ||
+                uploadState !== "uploaded" ||
+                !baseReleaseId ||
+                releaseNotes.trim().length < 3
+              }
+              onClick={() => saveMutation.mutate()}
+            >
+              {saveMutation.isPending ? "正在保存…" : "保存为待发布"}
+            </Button>
+          </>
+        }
+      >
+        <div className="side-panel-form">
+          <SelectField
+            label="平台"
+            value={platform}
+            disabled={uploadState !== "idle"}
+            onChange={(e) => {
+              setPlatform(e.target.value as "android" | "ios");
+              setBaseReleaseId("");
+            }}
+          >
+            <option value="android">Android</option>
+            <option value="ios">iOS</option>
+          </SelectField>
+          <SelectField
+            label="基线 APK"
+            value={baseReleaseId}
+            disabled={uploadState !== "idle" || baseQuery.isLoading}
+            onChange={(e) => setBaseReleaseId(e.target.value)}
+          >
+            <option value="">请选择已校验或已发布的 APK</option>
+            {(baseQuery.data?.items ?? []).map((base) => (
+              <option key={base.id} value={base.id}>
+                v{base.version} · build {base.buildNumber} ·{" "}
+                {base.runtimeVersion} · {base.status}
+              </option>
+            ))}
+          </SelectField>
+          {baseReleaseId &&
+            (() => {
+              const base = baseQuery.data?.items.find(
+                (item) => item.id === baseReleaseId,
+              );
+              return base ? (
+                <div className="prerequisite-panel">
+                  <ShieldCheck size={18} />
+                  <div>
+                    <strong>Runtime Version：{base.runtimeVersion}</strong>
+                    <p>
+                      OTA 只会分发给相同 Runtime 的 {base.platform} 客户端。
+                    </p>
+                  </div>
+                </div>
+              ) : null;
+            })()}
+          <SelectField
+            label="Channel"
+            value={channel}
+            disabled={uploadState !== "idle"}
+            onChange={(e) => setChannel(e.target.value)}
+          >
+            <option value="production">production</option>
+            <option value="staging">staging</option>
+          </SelectField>
+          <div className="form-field">
+            <span>OTA 资源包</span>
+            <FileDropzone
+              label="OTA 资源包"
+              file={file}
+              accept=".zip,application/zip"
+              disabled={uploadState !== "idle" || !baseReleaseId}
+              hint={
+                baseReleaseId
+                  ? "选择后立即上传 ZIP，服务端会校验 Manifest 和资源"
+                  : "请先选择基线 APK"
+              }
+              onFileChange={(next) => {
+                if (artifactToken)
+                  void adminApi.deleteOtaArtifact(tenantId, artifactToken);
+                setFile(next);
+                setArtifactToken("");
+                setUploadState("idle");
+                setUploadError("");
+                setUploadProgress(0);
+                startUpload(next);
+              }}
+            />
+          </div>
+          {file && uploadState !== "idle" && (
+            <div className="upload-progress-panel">
+              <div>
+                <span>
+                  {uploadStage}
+                  {uploadError && (
+                    <small className="field-error"> · {uploadError}</small>
+                  )}
+                </span>
+                <strong>{uploadProgress}%</strong>
+              </div>
+              <div className="progress">
+                <span style={{ width: `${uploadProgress}%` }} />
+              </div>
+              <small className="muted">
+                {uploadState === "uploaded"
+                  ? "资源已上传，保存后由服务端校验并创建待发布记录。"
+                  : `${file.name} · ${formatFileSize((file.size * uploadProgress) / 100)} / ${formatFileSize(file.size)}`}
+              </small>
+              {(uploadState === "preparing" || uploadState === "uploading") && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    uploadCancelledRef.current = true;
+                    abortRef.current?.abort();
+                    abortRef.current = null;
+                    uploadStartedRef.current = false;
+                    setArtifactToken("");
+                    setUploadState("idle");
+                    setUploadStage("");
+                    setUploadProgress(0);
+                  }}
+                >
+                  取消上传
+                </Button>
+              )}
+              {uploadState === "error" && (
+                <Button variant="ghost" onClick={() => startUpload(file)}>
+                  重新上传
+                </Button>
+              )}
+            </div>
+          )}
+          <label className="form-field">
+            <span>发布说明</span>
+            <textarea
+              className="input textarea"
+              value={releaseNotes}
+              onChange={(e) => setReleaseNotes(e.target.value)}
+              placeholder="例如：修复行情刷新问题"
+              disabled={saveMutation.isPending}
+            />
+          </label>
+          <label className="form-field">
+            <span>代码提交 SHA（可选）</span>
+            <input
+              className="input mono"
+              value={sourceCommitSha}
+              onChange={(e) => setSourceCommitSha(e.target.value)}
+              placeholder="用于追踪 OTA 来源"
+              disabled={saveMutation.isPending}
+            />
+          </label>
+        </div>
+      </SidePanel>
+      <SidePanel
+        open={pendingAction !== null}
+        title={pendingAction?.action === "pause" ? "暂停 OTA" : "发布 OTA"}
+        description="高风险操作需要填写原因并再次确认，最终状态由服务端校验。"
+        onClose={() => {
+          setPendingAction(null);
+          setReason("");
+          setReasonError("");
+        }}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingAction(null)}>
+              取消
+            </Button>
+            <Button
+              variant={pendingAction?.action === "pause" ? "danger" : "primary"}
+              disabled={reason.trim().length < 3}
+              onClick={() => {
+                if (reason.trim().length < 3) {
+                  setReasonError("请填写至少 3 个字符的操作原因。");
+                  return;
+                }
+                setConfirmOpen(true);
+              }}
+            >
+              继续确认
+            </Button>
+          </>
+        }
+      >
+        <div className="side-panel-form">
+          <label className="form-field">
+            <span>操作原因</span>
+            <textarea
+              className="input textarea"
+              value={reason}
+              onChange={(e) => {
+                setReason(e.target.value);
+                setReasonError("");
+              }}
+              aria-invalid={Boolean(reasonError)}
+              aria-describedby={
+                reasonError ? "ota-action-reason-error" : undefined
+              }
+              placeholder="至少 3 个字符"
+            />
+            {reasonError && (
+              <small className="field-error" id="ota-action-reason-error">
+                {reasonError}
+              </small>
+            )}
+          </label>
+          <span className="muted">原因会与操作者、请求 ID 一起记录。</span>
+        </div>
+      </SidePanel>
+      <ConfirmDialog
+        open={confirmOpen && pendingAction !== null}
+        title={`确认${pendingAction?.action === "pause" ? "暂停 OTA" : "发布 OTA"}？`}
+        description="该操作会影响当前租户对应 Runtime 的客户端。"
+        confirmLabel="确认操作"
+        tone={pendingAction?.action === "pause" ? "danger" : "default"}
+        loading={actionMutation.isPending}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          if (pendingAction)
+            actionMutation.mutate({
+              id: pendingAction.id,
+              action: pendingAction.action,
+              actionReason: reason.trim(),
+            });
+        }}
+      >
+        <div className="dialog-detail-list">
+          <span>操作原因：{reason.trim()}</span>
+          <span>状态转换由服务端最终校验</span>
+        </div>
+      </ConfirmDialog>
+    </>
+  );
+}

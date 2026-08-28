@@ -165,6 +165,7 @@ export function StatusPill({ status }: { status: string }) {
     staged: "待发布",
     completed: "历史版本",
     rejected: "校验失败",
+    superseded: "历史版本",
     rolled_back: "已停止",
     editing: "编辑中",
     configured: "已配置",

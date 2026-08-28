@@ -27,6 +27,48 @@ const releaseSchema = z.object({
   lastAction: z.string().nullable(),
 });
 export type Release = z.infer<typeof releaseSchema>;
+const otaBaseReleaseSchema = z.object({
+  id: z.string(),
+  version: z.string(),
+  buildNumber: z.number(),
+  platform: z.enum(["android", "ios", "harmony"]),
+  runtimeVersion: z.string(),
+  status: z.string(),
+});
+const otaReleaseSchema = z.object({
+  id: z.string(),
+  baseReleaseId: z.string(),
+  baseVersion: z.string().optional(),
+  baseBuildNumber: z.number().optional(),
+  baseRelease: otaBaseReleaseSchema.optional(),
+  platform: z.enum(["android", "ios"]),
+  channel: z.string(),
+  runtimeVersion: z.string(),
+  revision: z.number().int().positive(),
+  updateId: z.string(),
+  releaseKind: z.enum(["update", "rollback"]).optional(),
+  status: z.enum([
+    "draft",
+    "verified",
+    "active",
+    "paused",
+    "superseded",
+    "rejected",
+  ]),
+  releaseNotes: z.record(z.string(), z.array(z.string())),
+  sourceCommitSha: z.string().nullable().optional(),
+  rejectionReason: z.string().nullable().optional(),
+  verifiedAt: z.string().nullable().optional(),
+  publishedAt: z.string().nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type OtaRelease = z.infer<typeof otaReleaseSchema>;
+const otaListSchema = z.object({
+  items: z.array(otaReleaseSchema),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+});
 const listSchema = z.object({
   items: z.array(releaseSchema),
   nextCursor: z.string().nullable(),
@@ -275,6 +317,19 @@ const releaseArtifactUploadSchema = z.object({
   upload: uploadSchema,
 });
 
+const otaArtifactUploadSchema = z.object({
+  artifact: z.object({
+    id: z.string(),
+    token: z.string(),
+    fileName: z.string(),
+    contentType: z.string(),
+    size: z.number(),
+    objectKey: z.string(),
+    expiresAt: z.string(),
+  }),
+  upload: uploadSchema,
+});
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -340,6 +395,56 @@ export const adminApi = {
   releases: (tenantId: string) => {
     void tenantId;
     return request("/v1/admin/releases", listSchema);
+  },
+  otaReleases: (tenantId: string) => {
+    void tenantId;
+    return request("/v1/admin/ota/releases", otaListSchema);
+  },
+  otaBaseReleases: (tenantId: string, platform: "android" | "ios") => {
+    void tenantId;
+    return request(
+      `/v1/admin/ota/base-releases?platform=${encodeURIComponent(platform)}`,
+      z.object({ items: z.array(otaBaseReleaseSchema) }),
+    );
+  },
+  createOtaArtifactUpload: (tenantId: string, payload: unknown) => {
+    void tenantId;
+    return request("/v1/admin/ota/artifacts/uploads", otaArtifactUploadSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteOtaArtifact: (tenantId: string, token: string) => {
+    void tenantId;
+    return request(
+      `/v1/admin/ota/artifacts/upload?token=${encodeURIComponent(token)}`,
+      z.object({ deleted: z.literal(true) }),
+      { method: "DELETE", headers: { "x-ota-artifact-token": token } },
+    );
+  },
+  createOtaRelease: (tenantId: string, payload: unknown) => {
+    void tenantId;
+    return request(
+      "/v1/admin/ota/releases",
+      z.object({ release: otaReleaseSchema }),
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  },
+  otaAction: (
+    tenantId: string,
+    id: string,
+    action: "publish" | "pause",
+    reason: string,
+  ) => {
+    void tenantId;
+    return request(
+      `/v1/admin/ota/releases/${encodeURIComponent(id)}/${action}`,
+      z.union([
+        z.object({ release: otaReleaseSchema }),
+        z.object({ id: z.string(), status: z.string() }),
+      ]),
+      { method: "POST", body: JSON.stringify({ reason, confirm: true }) },
+    );
   },
   createReleaseArtifactUpload: (tenantId: string, payload: unknown) => {
     void tenantId;
