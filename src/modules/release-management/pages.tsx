@@ -1712,7 +1712,12 @@ export function OtaPage({ tenantId }: AdminPageProps) {
     uploadMutation.isError || saveMutation.isError || actionMutation.isError
       ? (uploadMutation.error ?? saveMutation.error ?? actionMutation.error)
       : null;
-  const otaReleases = otaQuery.data?.items ?? [];
+  const otaReleases = [...(otaQuery.data?.items ?? [])].sort(
+    (left, right) =>
+      right.revision - left.revision ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      right.id.localeCompare(left.id),
+  );
   const filteredOtaReleases = otaReleases.filter((release) => {
     if (platformFilter && release.platform !== platformFilter) return false;
     if (statusFilter && release.status !== statusFilter) return false;

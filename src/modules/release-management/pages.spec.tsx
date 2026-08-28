@@ -487,6 +487,34 @@ describe("ReleasesPage actions", () => {
 });
 
 describe("OtaPage", () => {
+  it("sorts OTA records by descending revision", async () => {
+    apiMocks.otaBaseReleases.mockResolvedValue({ items: [] });
+    const record = (id: string, revision: number) => ({
+      id,
+      baseReleaseId: "release-base",
+      platform: "android" as const,
+      channel: "production",
+      runtimeVersion: "fingerprint-a",
+      revision,
+      updateId: `update-${revision}`,
+      status: "active" as const,
+      releaseNotes: { "zh-CN": [`版本 ${revision}`] },
+      createdAt: `2026-08-28T00:0${revision}:00Z`,
+      updatedAt: `2026-08-28T00:0${revision}:00Z`,
+    });
+    apiMocks.otaReleases.mockResolvedValue({
+      items: [record("ota-1", 1), record("ota-3", 3), record("ota-2", 2)],
+      nextCursor: null,
+      hasMore: false,
+    });
+    renderOtaPage();
+
+    const rows = await screen.findAllByRole("row");
+    expect(rows[1]?.textContent).toContain("revision 3");
+    expect(rows[2]?.textContent).toContain("revision 2");
+    expect(rows[3]?.textContent).toContain("revision 1");
+  });
+
   it("uploads after a base APK is selected and saves a verified draft", async () => {
     apiMocks.otaReleases.mockResolvedValue({
       items: [],
