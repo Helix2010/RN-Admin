@@ -25,6 +25,8 @@ import {
   uploadUploadSessionPart,
   type UploadSession,
   type UploadSessionPart,
+  type OtaReleaseDetail,
+  type OtaRelease,
   type Release,
 } from "../../core/api";
 import {
@@ -1480,12 +1482,137 @@ export function ReleasesPage({
 type OtaUploadState =
   "idle" | "preparing" | "uploading" | "uploaded" | "saving" | "error";
 
+const otaIdentityFields: Array<{
+  key: keyof NonNullable<OtaReleaseDetail["identity"]>;
+  label: string;
+  source: string;
+}> = [
+  { key: "apiBaseUrl", label: "apiBaseUrl", source: "当前租户请求域名" },
+  {
+    key: "distributionChannel",
+    label: "distributionChannel",
+    source: "基线 APK / 构建渠道",
+  },
+  { key: "otaChannel", label: "otaChannel", source: "OTA 发布 Channel" },
+  {
+    key: "applicationId",
+    label: "applicationId",
+    source: "基线 APK 应用身份",
+  },
+  { key: "appVersion", label: "appVersion", source: "基线 APK version" },
+  {
+    key: "buildNumber",
+    label: "buildNumber",
+    source: "基线 APK build_number",
+  },
+  {
+    key: "runtimeVersion",
+    label: "runtimeVersion",
+    source: "基线 APK runtime_version",
+  },
+  {
+    key: "expoClientVersion",
+    label: "expoClient.version",
+    source: "基线 APK version",
+  },
+  {
+    key: "expoClientAndroidVersionCode",
+    label: "expoClient.android.versionCode",
+    source: "基线 APK build_number",
+  },
+];
+
+function OtaReleaseDetailPanel({ detail }: { detail: OtaReleaseDetail }) {
+  const identity = detail.identity ?? {};
+  return (
+    <div className="ota-detail-panel">
+      <section className="ota-detail-section">
+        <div className="ota-detail-section-heading">
+          <div>
+            <h3>发布身份</h3>
+            <p>最终值来自服务端保存后的不可变 Manifest。</p>
+          </div>
+          <StatusPill status={detail.release.status} />
+        </div>
+        <div className="ota-detail-grid">
+          {otaIdentityFields.map((field) => (
+            <div className="ota-detail-item" key={field.key}>
+              <span>{field.label}</span>
+              <strong className="mono">
+                {String(identity[field.key] ?? "-")}
+              </strong>
+              <small>来源：{field.source}</small>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="ota-detail-section">
+        <h3>发布记录</h3>
+        <div className="ota-detail-grid">
+          <div className="ota-detail-item">
+            <span>基线 APK</span>
+            <strong>
+              v{detail.release.baseVersion ?? "-"} · build{" "}
+              {detail.release.baseBuildNumber ?? "-"}
+            </strong>
+          </div>
+          <div className="ota-detail-item">
+            <span>Revision / Update ID</span>
+            <strong className="mono">
+              {detail.release.revision} · {detail.release.updateId}
+            </strong>
+          </div>
+          <div className="ota-detail-item">
+            <span>生效策略</span>
+            <strong>
+              {detail.release.applyStrategy === "immediate"
+                ? "立即重启"
+                : "下次启动"}
+            </strong>
+          </div>
+          <div className="ota-detail-item">
+            <span>Manifest SHA-256</span>
+            <strong className="mono">
+              {detail.release.manifestSha256 ?? "-"}
+            </strong>
+          </div>
+          <div className="ota-detail-item">
+            <span>Manifest Object Key</span>
+            <strong className="mono">
+              {detail.release.manifestKey ?? "-"}
+            </strong>
+          </div>
+          <div className="ota-detail-item">
+            <span>代码提交 SHA</span>
+            <strong className="mono">
+              {detail.release.sourceCommitSha ?? "-"}
+            </strong>
+          </div>
+        </div>
+      </section>
+      <details className="ota-manifest-raw">
+        <summary>查看最终 Manifest JSON</summary>
+        <pre>{JSON.stringify(detail.manifest, null, 2)}</pre>
+      </details>
+    </div>
+  );
+}
+
 export function OtaPage({ tenantId }: AdminPageProps) {
   const queryClient = useQueryClient();
   const otaQuery = useAdminQuery(["ota-releases", tenantId], () =>
     adminApi.otaReleases(tenantId),
   );
   const [showCreate, setShowCreate] = React.useState(false);
+  const [detailRelease, setDetailRelease] = React.useState<OtaRelease | null>(
+    null,
+  );
+  const detailQuery = useQuery({
+    queryKey: ["ota-release-detail", tenantId, detailRelease?.id],
+    queryFn: () => adminApi.otaReleaseDetail(tenantId, detailRelease!.id),
+    enabled: Boolean(detailRelease),
+    staleTime: 15_000,
+  });
   const [platform, setPlatform] = React.useState<"android" | "ios">(() =>
     releaseQueryParam("platform") === "ios" ? "ios" : "android",
   );
@@ -1920,6 +2047,12 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                   </td>
                   <td>
                     <div className="toolbar">
+                      <Button
+                        variant="ghost"
+                        onClick={() => setDetailRelease(release)}
+                      >
+                        详情
+                      </Button>
                       {release.status === "verified" && (
                         <Button
                           onClick={() => {
@@ -1955,6 +2088,27 @@ export function OtaPage({ tenantId }: AdminPageProps) {
           </table>
         </Card>
       )}
+      <SidePanel
+        open={detailRelease !== null}
+        title="OTA 详情"
+        description="展示服务端最终保存的 Manifest、字段来源和基线 APK 身份。"
+        onClose={() => setDetailRelease(null)}
+        footer={
+          <Button variant="ghost" onClick={() => setDetailRelease(null)}>
+            关闭
+          </Button>
+        }
+      >
+        {detailQuery.isLoading ? (
+          <EmptyState title="正在读取 OTA Manifest" />
+        ) : detailQuery.isError ? (
+          <div className="error-banner">
+            无法读取 OTA 详情：{detailQuery.error.message}
+          </div>
+        ) : detailQuery.data ? (
+          <OtaReleaseDetailPanel detail={detailQuery.data} />
+        ) : null}
+      </SidePanel>
       <SidePanel
         open={showCreate}
         title="上传 OTA 热更新"

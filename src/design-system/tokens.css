@@ -569,6 +569,82 @@ button {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+.ota-detail-panel {
+  display: grid;
+  gap: 18px;
+}
+.ota-detail-section {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.ota-detail-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ota-detail-section h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+}
+.ota-detail-section p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ota-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.ota-detail-item {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.ota-detail-item > span,
+.ota-detail-item > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.ota-detail-item > strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+.ota-manifest-raw {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.ota-manifest-raw summary {
+  padding: 12px 14px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+.ota-manifest-raw pre {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  padding: 0 14px 14px;
+  color: var(--muted);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .release-index {
   width: 46px;
   color: var(--muted);

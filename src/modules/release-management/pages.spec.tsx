@@ -19,6 +19,7 @@ const apiMocks = vi.hoisted(() => ({
   completeUploadSession: vi.fn(),
   deleteUploadSession: vi.fn(),
   otaReleases: vi.fn(),
+  otaReleaseDetail: vi.fn(),
   otaBaseReleases: vi.fn(),
   createOtaArtifactUpload: vi.fn(),
   deleteOtaArtifact: vi.fn(),
@@ -513,6 +514,80 @@ describe("OtaPage", () => {
     expect(rows[1]?.textContent).toContain("revision 3");
     expect(rows[2]?.textContent).toContain("revision 2");
     expect(rows[3]?.textContent).toContain("revision 1");
+  });
+
+  it("opens OTA detail and shows final manifest identity fields", async () => {
+    apiMocks.otaBaseReleases.mockResolvedValue({ items: [] });
+    apiMocks.otaReleases.mockResolvedValue({
+      items: [
+        {
+          id: "ota-detail",
+          baseReleaseId: "release-base",
+          baseVersion: "1.1.2",
+          baseBuildNumber: 6,
+          platform: "android",
+          channel: "production",
+          applyStrategy: "immediate",
+          runtimeVersion: "runtime-a",
+          revision: 2,
+          updateId: "update-detail",
+          status: "active",
+          releaseNotes: { "zh-CN": ["更新"] },
+          createdAt: "2026-08-28T00:00:00Z",
+          updatedAt: "2026-08-28T00:00:00Z",
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+    apiMocks.otaReleaseDetail.mockResolvedValue({
+      release: {
+        id: "ota-detail",
+        baseReleaseId: "release-base",
+        baseVersion: "1.1.2",
+        baseBuildNumber: 6,
+        platform: "android",
+        channel: "production",
+        applyStrategy: "immediate",
+        runtimeVersion: "runtime-a",
+        revision: 2,
+        updateId: "update-detail",
+        status: "active",
+        releaseNotes: { "zh-CN": ["更新"] },
+        manifestKey: "tenants/100000001/ota/manifest.json",
+        manifestSha256: "sha256-detail",
+        createdAt: "2026-08-28T00:00:00Z",
+        updatedAt: "2026-08-28T00:00:00Z",
+      },
+      identity: {
+        apiBaseUrl: "https://api.anyfun.win",
+        distributionChannel: "direct",
+        otaChannel: "production",
+        applicationId: "com.anyfun.foundation",
+        appVersion: "1.1.2",
+        buildNumber: "6",
+        runtimeVersion: "runtime-a",
+        expoClientVersion: "1.1.2",
+        expoClientAndroidVersionCode: 6,
+      },
+      baseMetadata: { packageName: "com.anyfun.foundation", versionCode: 6 },
+      manifest: {
+        runtimeVersion: "runtime-a",
+        metadata: { applyStrategy: "immediate" },
+      },
+    });
+    const user = userEvent.setup();
+    renderOtaPage();
+
+    await user.click(await screen.findByRole("button", { name: "详情" }));
+
+    expect(await screen.findByText("https://api.anyfun.win")).toBeTruthy();
+    expect(screen.getByText("com.anyfun.foundation")).toBeTruthy();
+    expect(screen.getByText("查看最终 Manifest JSON")).toBeTruthy();
+    expect(apiMocks.otaReleaseDetail).toHaveBeenCalledWith(
+      "tenant-a",
+      "ota-detail",
+    );
   });
 
   it("uploads after a base APK is selected and saves a verified draft", async () => {

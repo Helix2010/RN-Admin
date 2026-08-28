@@ -70,6 +70,33 @@ const otaListSchema = z.object({
   nextCursor: z.string().nullable(),
   hasMore: z.boolean(),
 });
+const otaManifestIdentitySchema = z.object({
+  apiBaseUrl: z.string().optional(),
+  distributionChannel: z.string().optional(),
+  otaChannel: z.string().optional(),
+  applicationId: z.string().optional(),
+  appVersion: z.string().optional(),
+  buildNumber: z.union([z.string(), z.number()]).optional(),
+  expoClientVersion: z.string().optional(),
+  expoClientAndroidVersionCode: z.number().optional(),
+  expoClientIOSBuildNumber: z.string().optional(),
+  runtimeVersion: z.string().optional(),
+  platform: z.string().optional(),
+  channel: z.string().optional(),
+});
+const otaReleaseDetailSchema = z.object({
+  release: otaReleaseSchema.extend({
+    baseVersion: z.string().optional(),
+    baseBuildNumber: z.number().optional(),
+    manifestKey: z.string().nullable().optional(),
+    manifestSha256: z.string().nullable().optional(),
+    createdBy: z.string().optional(),
+  }),
+  identity: otaManifestIdentitySchema.nullable(),
+  baseMetadata: z.record(z.string(), z.unknown()),
+  manifest: z.record(z.string(), z.unknown()).nullable(),
+});
+export type OtaReleaseDetail = z.infer<typeof otaReleaseDetailSchema>;
 const listSchema = z.object({
   items: z.array(releaseSchema),
   nextCursor: z.string().nullable(),
@@ -457,6 +484,13 @@ export const adminApi = {
   otaReleases: (tenantId: string) => {
     void tenantId;
     return request("/v1/admin/ota/releases", otaListSchema);
+  },
+  otaReleaseDetail: (tenantId: string, id: string) => {
+    void tenantId;
+    return request(
+      `/v1/admin/ota/releases/${encodeURIComponent(id)}`,
+      otaReleaseDetailSchema,
+    );
   },
   otaBaseReleases: (tenantId: string, platform: "android" | "ios") => {
     void tenantId;
