@@ -534,7 +534,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
         <div>
           <div className="eyebrow">Release management</div>
           <h1>发布管理</h1>
-          <p>上传 APK，服务端自动校验后发布到官网，生成可分享的安装链接。</p>
+          <p>上传 APK，填写多语言发布说明，校验通过后从列表发布到官网。</p>
         </div>
         <Button
           onClick={() => {
