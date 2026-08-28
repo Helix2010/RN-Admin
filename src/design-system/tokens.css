@@ -529,6 +529,44 @@ button {
 .upload-progress-panel strong {
   color: var(--brand);
 }
+.runtime-version-value {
+  position: relative;
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+.runtime-version-value:hover::after,
+.runtime-version-value:focus-visible::after {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: min(520px, 70vw);
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: 0 10px 28px var(--dialog-shadow);
+  content: attr(data-full);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: normal;
+}
+.runtime-version-value.is-missing {
+  color: var(--warning);
+  font-family: inherit;
+}
 .main {
   margin-left: 252px;
   width: calc(100% - 252px);

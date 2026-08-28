@@ -48,11 +48,27 @@ const actionDescriptions: Record<string, string> = {
   publish: "使该版本成为官网当前下载版本，同平台原活跃版本会转为历史版本。",
   pause: "停止官网继续分发该版本；安装包和发布记录保留，之后可以再次发布恢复。",
 };
-const DEFAULT_RUNTIME_VERSION = "expo:57.0.15";
-
 function formatFileSize(value: number): string {
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function shortRuntimeVersion(value: string): string {
+  if (!value) return "不支持 OTA";
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 8)}…${value.slice(-8)}`;
+}
+
+function RuntimeVersionValue({ value }: { value: string }) {
+  return (
+    <span
+      className={`runtime-version-value${value ? "" : " is-missing"}`}
+      data-full={value || "未检测到 Runtime Version"}
+      title={value || "该安装包未包含 Expo Fingerprint，不能作为 OTA 基线"}
+    >
+      {shortRuntimeVersion(value)}
+    </span>
+  );
 }
 
 export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
@@ -298,7 +314,6 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
         platform,
         version: version.trim(),
         buildNumber: Number(buildNumber),
-        runtimeVersion: DEFAULT_RUNTIME_VERSION,
         releaseNotes: {
           "zh-CN": releaseNotes
             .split("\n")
@@ -871,6 +886,10 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                     <div className="muted mono">
                       build {release.buildNumber}
                     </div>
+                    <div className="muted runtime-version-line">
+                      Runtime{" "}
+                      <RuntimeVersionValue value={release.runtimeVersion} />
+                    </div>
                   </td>
                   <td>
                     {release.platform}
@@ -1243,7 +1262,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                     <div className="muted">{release.channel}</div>
                   </td>
                   <td className="mono">
-                    {release.runtimeVersion}
+                    <RuntimeVersionValue value={release.runtimeVersion} />
                     <div className="muted">revision {release.revision}</div>
                   </td>
                   <td>
@@ -1359,7 +1378,10 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                 <div className="prerequisite-panel">
                   <ShieldCheck size={18} />
                   <div>
-                    <strong>Runtime Version：{base.runtimeVersion}</strong>
+                    <strong>
+                      Runtime Version：
+                      <RuntimeVersionValue value={base.runtimeVersion} />
+                    </strong>
                     <p>
                       OTA 只会分发给相同 Runtime 的 {base.platform} 客户端。
                     </p>
