@@ -53,6 +53,70 @@ function formatFileSize(value: number): string {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
+type ReleaseManagementTab = "full" | "ota";
+
+function releaseTabFromLocation(): ReleaseManagementTab {
+  return new URLSearchParams(window.location.search).get("tab") === "ota"
+    ? "ota"
+    : "full";
+}
+
+export function ReleaseManagementPage(props: AdminPageProps) {
+  const [tab, setTab] = React.useState<ReleaseManagementTab>(
+    releaseTabFromLocation,
+  );
+
+  React.useEffect(() => {
+    const syncFromBrowser = () => {
+      const nextTab = releaseTabFromLocation();
+      const expected = `/releases?tab=${nextTab}`;
+      if (`${window.location.pathname}${window.location.search}` !== expected) {
+        window.history.replaceState(null, "", expected);
+      }
+      setTab(nextTab);
+    };
+    syncFromBrowser();
+    window.addEventListener("popstate", syncFromBrowser);
+    return () => window.removeEventListener("popstate", syncFromBrowser);
+  }, []);
+
+  const selectTab = (nextTab: ReleaseManagementTab) => {
+    if (nextTab === tab) return;
+    window.history.pushState(null, "", `/releases?tab=${nextTab}`);
+    setTab(nextTab);
+  };
+
+  return (
+    <>
+      <div
+        className="release-management-tabs"
+        role="tablist"
+        aria-label="发布类型"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "full"}
+          className={tab === "full" ? "is-active" : ""}
+          onClick={() => selectTab("full")}
+        >
+          全量版本
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "ota"}
+          className={tab === "ota" ? "is-active" : ""}
+          onClick={() => selectTab("ota")}
+        >
+          OTA 热更新
+        </button>
+      </div>
+      {tab === "ota" ? <OtaPage {...props} /> : <ReleasesPage {...props} />}
+    </>
+  );
+}
+
 function shortRuntimeVersion(value: string): string {
   if (!value) return "不支持 OTA";
   if (value.length <= 18) return value;

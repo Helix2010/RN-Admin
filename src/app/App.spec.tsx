@@ -156,4 +156,16 @@ describe("App sidebar actions", () => {
     ).toBeTruthy();
     expect(window.location.pathname).toBe("/releases");
   });
+
+  it("does not preserve the removed top-level OTA route", async () => {
+    window.history.replaceState(null, "", "/ota");
+    mockAuthenticatedShell();
+    renderApp();
+
+    expect(
+      await screen.findByRole("heading", { name: "发布管理" }),
+    ).toBeTruthy();
+    expect(window.location.pathname).toBe("/releases");
+    expect(window.location.search).toBe("?tab=full");
+  });
 });

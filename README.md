@@ -18,6 +18,7 @@ pnpm dev
 
 - `src/plugin-system`：可插拔模块注册协议；
 - `src/modules/release-management`：发布总览、发布列表和状态动作；
+- 发布管理页使用 `/releases?tab=full` 与 `/releases?tab=ota` 两个页签；OTA 不再作为独立一级导航，也不保留旧 `/ota` 地址；
 - `src/modules/app-config`：启动配置、国际化、主题与升级策略编辑；
 - `src/modules/app-config/localization-page.tsx`：动态语言设置、租户文案覆盖、Excel 导入导出与语言资源发布；
 - `src/modules/audit`：发布操作审计；
