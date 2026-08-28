@@ -54,11 +54,22 @@ function formatFileSize(value: number): string {
 }
 
 type ReleaseManagementTab = "full" | "ota";
+type ReleaseManagementPageProps = AdminPageProps & {
+  onOpenOta?: (
+    baseReleaseId: string,
+    platform: "android" | "ios",
+    create: boolean,
+  ) => void;
+};
 
 function releaseTabFromLocation(): ReleaseManagementTab {
   return new URLSearchParams(window.location.search).get("tab") === "ota"
     ? "ota"
     : "full";
+}
+
+function releaseQueryParam(name: string): string {
+  return new URLSearchParams(window.location.search).get(name) ?? "";
 }
 
 export function ReleaseManagementPage(props: AdminPageProps) {
@@ -71,7 +82,7 @@ export function ReleaseManagementPage(props: AdminPageProps) {
       const nextTab = releaseTabFromLocation();
       const expected = `/releases?tab=${nextTab}`;
       if (`${window.location.pathname}${window.location.search}` !== expected) {
-        window.history.replaceState(null, "", expected);
+        window.history.replaceState(null, "", `/releases?tab=${nextTab}`);
       }
       setTab(nextTab);
     };
@@ -80,10 +91,25 @@ export function ReleaseManagementPage(props: AdminPageProps) {
     return () => window.removeEventListener("popstate", syncFromBrowser);
   }, []);
 
-  const selectTab = (nextTab: ReleaseManagementTab) => {
-    if (nextTab === tab) return;
-    window.history.pushState(null, "", `/releases?tab=${nextTab}`);
+  const selectTab = (
+    nextTab: ReleaseManagementTab,
+    params: Record<string, string> = {},
+  ) => {
+    const search = new URLSearchParams({ tab: nextTab, ...params });
+    window.history.pushState(null, "", `/releases?${search.toString()}`);
     setTab(nextTab);
+  };
+
+  const openOta = (
+    baseReleaseId: string,
+    platform: "android" | "ios",
+    create: boolean,
+  ) => {
+    selectTab("ota", {
+      baseReleaseId,
+      platform,
+      ...(create ? { action: "create" } : {}),
+    });
   };
 
   return (
@@ -112,7 +138,11 @@ export function ReleaseManagementPage(props: AdminPageProps) {
           OTA 热更新
         </button>
       </div>
-      {tab === "ota" ? <OtaPage {...props} /> : <ReleasesPage {...props} />}
+      {tab === "ota" ? (
+        <OtaPage {...props} />
+      ) : (
+        <ReleasesPage {...props} onOpenOta={openOta} />
+      )}
     </>
   );
 }
@@ -269,7 +299,10 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
   );
 }
 
-export function ReleasesPage({ tenantId }: AdminPageProps) {
+export function ReleasesPage({
+  tenantId,
+  onOpenOta,
+}: ReleaseManagementPageProps) {
   const queryClient = useQueryClient();
   const query = useAdminQuery(["releases", tenantId], () =>
     adminApi.releases(tenantId),
@@ -1134,6 +1167,39 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                           </Button>
                         </>
                       )}
+                      {onOpenOta &&
+                        release.platform !== "harmony" &&
+                        (release.status === "verified" ||
+                          release.status === "active") && (
+                          <Button
+                            variant="ghost"
+                            onClick={() =>
+                              onOpenOta(
+                                release.id,
+                                release.platform === "ios" ? "ios" : "android",
+                                true,
+                              )
+                            }
+                          >
+                            <CloudUpload size={14} />
+                            发布 OTA
+                          </Button>
+                        )}
+                      {onOpenOta && release.platform !== "harmony" && (
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            onOpenOta(
+                              release.id,
+                              release.platform === "ios" ? "ios" : "android",
+                              false,
+                            )
+                          }
+                        >
+                          <ArrowUpRight size={14} />
+                          查看 OTA
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1155,16 +1221,60 @@ export function OtaPage({ tenantId }: AdminPageProps) {
     adminApi.otaReleases(tenantId),
   );
   const [showCreate, setShowCreate] = React.useState(false);
-  const [platform, setPlatform] = React.useState<"android" | "ios">("android");
+  const [platform, setPlatform] = React.useState<"android" | "ios">(() =>
+    releaseQueryParam("platform") === "ios" ? "ios" : "android",
+  );
   const [channel, setChannel] = React.useState("production");
   const [applyStrategy, setApplyStrategy] = React.useState<
     "next_launch" | "immediate"
   >("next_launch");
-  const [baseReleaseId, setBaseReleaseId] = React.useState("");
+  const [baseReleaseId, setBaseReleaseId] = React.useState(() =>
+    releaseQueryParam("baseReleaseId"),
+  );
+  const [platformFilter, setPlatformFilter] = React.useState(() =>
+    releaseQueryParam("platform"),
+  );
+  const [statusFilter, setStatusFilter] = React.useState(() =>
+    releaseQueryParam("status"),
+  );
+  const [baseFilter, setBaseFilter] = React.useState(() =>
+    releaseQueryParam("baseReleaseId"),
+  );
+  const [listChannel, setListChannel] = React.useState(() =>
+    releaseQueryParam("channel"),
+  );
   const baseQuery = useAdminQuery(
     ["ota-base-releases", tenantId, platform],
     () => adminApi.otaBaseReleases(tenantId, platform),
   );
+  const autoOpenHandledRef = React.useRef(false);
+  React.useEffect(() => {
+    if (
+      releaseQueryParam("action") === "create" &&
+      baseReleaseId &&
+      baseQuery.data &&
+      !autoOpenHandledRef.current
+    ) {
+      autoOpenHandledRef.current = true;
+      setShowCreate(true);
+    }
+  }, [baseQuery.data, baseReleaseId]);
+  React.useEffect(() => {
+    const syncFilters = () => {
+      setPlatformFilter(releaseQueryParam("platform"));
+      setStatusFilter(releaseQueryParam("status"));
+      setListChannel(releaseQueryParam("channel"));
+      setBaseFilter(releaseQueryParam("baseReleaseId"));
+      const requestedPlatform = releaseQueryParam("platform");
+      if (requestedPlatform === "android" || requestedPlatform === "ios") {
+        setPlatform(requestedPlatform);
+      }
+      const requestedBase = releaseQueryParam("baseReleaseId");
+      if (requestedBase) setBaseReleaseId(requestedBase);
+    };
+    window.addEventListener("popstate", syncFilters);
+    return () => window.removeEventListener("popstate", syncFilters);
+  }, []);
   const [file, setFile] = React.useState<File | null>(null);
   const [releaseNotes, setReleaseNotes] =
     React.useState("修复已知问题并优化体验");
@@ -1338,6 +1448,23 @@ export function OtaPage({ tenantId }: AdminPageProps) {
       ? (uploadMutation.error ?? saveMutation.error ?? actionMutation.error)
       : null;
   const otaReleases = otaQuery.data?.items ?? [];
+  const filteredOtaReleases = otaReleases.filter((release) => {
+    if (platformFilter && release.platform !== platformFilter) return false;
+    if (statusFilter && release.status !== statusFilter) return false;
+    if (listChannel && release.channel !== listChannel) return false;
+    if (baseFilter && release.baseReleaseId !== baseFilter) return false;
+    return true;
+  });
+  const updateOtaFilters = (next: Record<string, string>) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", "ota");
+    params.delete("action");
+    for (const [key, value] of Object.entries(next)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    window.history.replaceState(null, "", `/releases?${params.toString()}`);
+  };
   return (
     <>
       {feedback && (
@@ -1381,6 +1508,13 @@ export function OtaPage({ tenantId }: AdminPageProps) {
             detail="上传第一个 OTA 包开始热更新。"
           />
         </Card>
+      ) : filteredOtaReleases.length === 0 ? (
+        <Card>
+          <EmptyState
+            title="没有匹配的 OTA 记录"
+            detail="请调整平台、状态、Channel 或基线 APK筛选条件。"
+          />
+        </Card>
       ) : (
         <Card className="table-wrap">
           <div className="card-header">
@@ -1390,14 +1524,72 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                 每条 OTA 必须兼容所选基线 APK 的 Runtime Version。
               </p>
             </div>
-            <SelectField
-              aria-label="OTA 通道"
-              value={channel}
-              onChange={(e) => setChannel(e.target.value)}
-            >
-              <option value="production">production</option>
-              <option value="staging">staging</option>
-            </SelectField>
+            <div className="toolbar ota-filter-toolbar">
+              <SelectField
+                aria-label="OTA 平台筛选"
+                value={platformFilter}
+                onChange={(e) => {
+                  setPlatformFilter(e.target.value);
+                  updateOtaFilters({ platform: e.target.value });
+                }}
+              >
+                <option value="">全部平台</option>
+                <option value="android">Android</option>
+                <option value="ios">iOS</option>
+              </SelectField>
+              <SelectField
+                aria-label="OTA 状态筛选"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  updateOtaFilters({ status: e.target.value });
+                }}
+              >
+                <option value="">全部状态</option>
+                <option value="verified">待发布</option>
+                <option value="active">已发布</option>
+                <option value="paused">已暂停</option>
+                <option value="superseded">历史版本</option>
+              </SelectField>
+              <SelectField
+                aria-label="OTA 通道筛选"
+                value={listChannel}
+                onChange={(e) => {
+                  setListChannel(e.target.value);
+                  updateOtaFilters({ channel: e.target.value });
+                }}
+              >
+                <option value="">全部 Channel</option>
+                <option value="production">production</option>
+                <option value="staging">staging</option>
+              </SelectField>
+              <SelectField
+                aria-label="OTA 基线 APK 筛选"
+                value={baseFilter}
+                onChange={(e) => {
+                  setBaseFilter(e.target.value);
+                  updateOtaFilters({ baseReleaseId: e.target.value });
+                }}
+              >
+                <option value="">全部基线 APK</option>
+                {otaReleases
+                  .filter(
+                    (release, index, items) =>
+                      items.findIndex(
+                        (item) => item.baseReleaseId === release.baseReleaseId,
+                      ) === index,
+                  )
+                  .map((release) => (
+                    <option
+                      key={release.baseReleaseId}
+                      value={release.baseReleaseId}
+                    >
+                      v{release.baseVersion ?? "-"} · build{" "}
+                      {release.baseBuildNumber ?? "-"}
+                    </option>
+                  ))}
+              </SelectField>
+            </div>
           </div>
           <table>
             <thead>
@@ -1413,7 +1605,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
               </tr>
             </thead>
             <tbody>
-              {otaReleases.map((release, index) => (
+              {filteredOtaReleases.map((release, index) => (
                 <tr key={release.id}>
                   <td className="muted mono">{index + 1}</td>
                   <td>

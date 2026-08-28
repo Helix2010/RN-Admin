@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OtaPage, ReleasesPage } from "./pages";
+import { OtaPage, ReleaseManagementPage, ReleasesPage } from "./pages";
 
 const apiMocks = vi.hoisted(() => ({
   releases: vi.fn(),
@@ -100,7 +100,76 @@ function renderOtaPage() {
   );
 }
 
+function renderReleaseManagementPage() {
+  apiMocks.localization.mockResolvedValue({
+    settings: {
+      schemaVersion: 2,
+      fallbackLanguage: "zh-CN",
+      refreshIntervalSeconds: 21600,
+      languages: {},
+    },
+    documents: { items: [], total: 0 },
+    tenantVersion: 1,
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ReleaseManagementPage
+        tenantId="tenant-a"
+        tenantName="Tenant A"
+        onNavigate={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+}
+
 describe("ReleasesPage actions", () => {
+  it("opens the OTA tab with the selected APK as context", async () => {
+    apiMocks.releases.mockResolvedValue({
+      items: [
+        {
+          id: "release-base",
+          platform: "android",
+          version: "1.2.0",
+          buildNumber: 10,
+          runtimeVersion: "fingerprint-a",
+          status: "active",
+          releaseNotes: { "zh-CN": ["稳定版本"] },
+          createdAt: "2026-08-28T00:00:00Z",
+          updatedAt: "2026-08-28T00:00:00Z",
+          lastAction: "publish",
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+    apiMocks.otaReleases.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+    });
+    apiMocks.otaBaseReleases.mockResolvedValue({ items: [] });
+    const user = userEvent.setup();
+    renderReleaseManagementPage();
+
+    await user.click(await screen.findByRole("button", { name: "查看 OTA" }));
+
+    expect(window.location.pathname).toBe("/releases");
+    expect(window.location.search).toBe(
+      "?tab=ota&baseReleaseId=release-base&platform=android",
+    );
+    expect(
+      await screen.findByRole("heading", { name: "OTA 热更新" }),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("tab", { name: "OTA 热更新" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
   it("opens a QR code share dialog for an active release", async () => {
     apiMocks.releases.mockResolvedValue({
       items: [
