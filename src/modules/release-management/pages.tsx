@@ -18,6 +18,9 @@ import {
   adminApi,
   publicApiUrl,
   uploadArtifactFile,
+  uploadUploadSessionPart,
+  type UploadSession,
+  type UploadSessionPart,
   type Release,
 } from "../../core/api";
 import {
@@ -329,11 +332,14 @@ export function ReleasesPage({
     React.useState("zh-CN");
   const releaseNoteLanguageInitialized = React.useRef(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
+  const [uploadedBytes, setUploadedBytes] = React.useState(0);
+  const [uploadSpeed, setUploadSpeed] = React.useState(0);
   const [uploadStage, setUploadStage] = React.useState("");
   const [uploadState, setUploadState] = React.useState<
     | "idle"
     | "preparing"
     | "uploading"
+    | "paused"
     | "uploaded"
     | "saving"
     | "success"
@@ -342,6 +348,11 @@ export function ReleasesPage({
   const [artifactToken, setArtifactToken] = React.useState("");
   const [uploadError, setUploadError] = React.useState("");
   const uploadAbortRef = React.useRef<AbortController | null>(null);
+  const uploadSessionRef = React.useRef<UploadSession | null>(null);
+  const uploadedPartsRef = React.useRef(new Map<number, UploadSessionPart>());
+  const partProgressRef = React.useRef(new Map<number, number>());
+  const uploadStartedAtRef = React.useRef(0);
+  const uploadPausedRef = React.useRef(false);
   const uploadCancelledRef = React.useRef(false);
   const uploadStartRef = React.useRef(false);
   const [pendingAction, setPendingAction] = React.useState<{
@@ -405,38 +416,182 @@ export function ReleasesPage({
     releaseNoteLanguages,
     requiredReleaseNoteLanguage,
   ]);
+  const uploadFingerprint = (input: File) =>
+    `${input.name}:${input.size}:${input.lastModified}`;
+  const uploadStorageKey = (input: File) =>
+    `rn-admin:apk-upload:${tenantId}:${uploadFingerprint(input)}`;
   const uploadMutation = useMutation({
     mutationFn: async (input: { file: File }) => {
       const controller = new AbortController();
       uploadAbortRef.current = controller;
       uploadCancelledRef.current = false;
+      uploadPausedRef.current = false;
       setUploadState("preparing");
       setUploadError("");
-      setUploadStage("正在申请安全上传地址");
+      setUploadStage("正在准备分片上传");
       setUploadProgress(0);
-      const ticket = await adminApi.createReleaseArtifactUpload(tenantId, {
-        fileName: input.file.name,
-        contentType:
-          input.file.type || "application/vnd.android.package-archive",
-        size: input.file.size,
-      });
-      setArtifactToken(ticket.artifact.token);
-      setUploadState("uploading");
-      setUploadStage("正在直传对象存储");
+      setUploadedBytes(0);
+      setUploadSpeed(0);
+      uploadStartedAtRef.current = Date.now();
+      const cachedRaw = window.localStorage.getItem(
+        uploadStorageKey(input.file),
+      );
+      let cached: { id: string; token?: string } | null = null;
       try {
-        await uploadArtifactFile(
-          ticket.upload,
-          input.file,
-          setUploadProgress,
-          controller.signal,
-        );
-      } catch (error) {
-        await adminApi
-          .deleteReleaseArtifact(tenantId, ticket.artifact.token)
-          .catch(() => undefined);
-        throw error;
+        cached = cachedRaw ? JSON.parse(cachedRaw) : null;
+      } catch {
+        cached = cachedRaw ? { id: cachedRaw } : null;
       }
-      return ticket.artifact;
+      let session: UploadSession;
+      if (cached?.id) {
+        try {
+          const current = await adminApi.getUploadSession(
+            tenantId,
+            cached.id,
+            cached.token,
+          );
+          if (
+            current.session.status === "active" &&
+            current.session.fileName === input.file.name &&
+            current.session.size === input.file.size
+          )
+            session = current.session;
+          else throw new Error("上传会话已失效");
+        } catch {
+          window.localStorage.removeItem(uploadStorageKey(input.file));
+          session = (
+            await adminApi.createUploadSession(tenantId, {
+              uploadType: "apk",
+              fileName: input.file.name,
+              contentType:
+                input.file.type || "application/vnd.android.package-archive",
+              size: input.file.size,
+              partSize: 16 * 1024 * 1024,
+              fingerprint: uploadFingerprint(input.file),
+            })
+          ).session;
+        }
+      } else {
+        session = (
+          await adminApi.createUploadSession(tenantId, {
+            uploadType: "apk",
+            fileName: input.file.name,
+            contentType:
+              input.file.type || "application/vnd.android.package-archive",
+            size: input.file.size,
+            partSize: 16 * 1024 * 1024,
+            fingerprint: uploadFingerprint(input.file),
+          })
+        ).session;
+      }
+      if (controller.signal.aborted || uploadCancelledRef.current) {
+        if (uploadCancelledRef.current && session!) {
+          void adminApi
+            .deleteUploadSession(tenantId, session.id, session.token)
+            .catch(() => undefined);
+        }
+        throw new Error("上传已取消");
+      }
+      uploadSessionRef.current = session;
+      window.localStorage.setItem(
+        uploadStorageKey(input.file),
+        JSON.stringify({ id: session.id, token: session.token }),
+      );
+      uploadedPartsRef.current = new Map(
+        session.uploadedParts.map((part) => [part.partNumber, part]),
+      );
+      partProgressRef.current = new Map();
+      const totalParts = session.totalParts;
+      const pendingParts = Array.from(
+        { length: totalParts },
+        (_, index) => index + 1,
+      ).filter((partNumber) => !uploadedPartsRef.current.has(partNumber));
+      setUploadState("uploading");
+      setUploadStage(
+        `正在上传分片（${totalParts - pendingParts.length}/${totalParts}）`,
+      );
+      const updateProgress = () => {
+        let uploaded = 0;
+        for (const part of uploadedPartsRef.current.values())
+          uploaded +=
+            part.size ??
+            Math.min(
+              session.partSize,
+              input.file.size - (part.partNumber - 1) * session.partSize,
+            );
+        for (const value of partProgressRef.current.values()) uploaded += value;
+        setUploadedBytes(uploaded);
+        const elapsedSeconds = Math.max(
+          (Date.now() - uploadStartedAtRef.current) / 1000,
+          0.25,
+        );
+        setUploadSpeed(uploaded / elapsedSeconds);
+        setUploadProgress(
+          Math.min(99, Math.round((uploaded / input.file.size) * 100)),
+        );
+        setUploadStage(
+          `正在上传分片（${uploadedPartsRef.current.size}/${totalParts}）`,
+        );
+      };
+      updateProgress();
+      let nextIndex = 0;
+      const worker = async () => {
+        while (nextIndex < pendingParts.length) {
+          const partNumber = pendingParts[nextIndex++];
+          const start = (partNumber - 1) * session.partSize;
+          const end = Math.min(start + session.partSize, input.file.size);
+          let lastError: unknown;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+              const part = await uploadUploadSessionPart(
+                session,
+                partNumber,
+                input.file.slice(start, end),
+                (loaded) => {
+                  partProgressRef.current.set(partNumber, loaded);
+                  updateProgress();
+                },
+                controller.signal,
+              );
+              uploadedPartsRef.current.set(partNumber, {
+                ...part,
+                size: end - start,
+              });
+              partProgressRef.current.delete(partNumber);
+              updateProgress();
+              lastError = undefined;
+              break;
+            } catch (error) {
+              lastError = error;
+              if (controller.signal.aborted) throw error;
+              await new Promise((resolve) =>
+                window.setTimeout(resolve, 300 * (attempt + 1)),
+              );
+            }
+          }
+          if (lastError) throw lastError;
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(3, pendingParts.length || 1) }, worker),
+      );
+      if (controller.signal.aborted || uploadCancelledRef.current) {
+        throw new Error("上传已取消");
+      }
+      if (uploadPausedRef.current) throw new Error("上传已暂停");
+      setUploadState("preparing");
+      setUploadStage("正在合并分片并校验文件");
+      const complete = await adminApi.completeUploadSession(
+        tenantId,
+        session.id,
+        Array.from(uploadedPartsRef.current.values()).sort(
+          (a, b) => a.partNumber - b.partNumber,
+        ),
+        session.token,
+      );
+      setArtifactToken(complete.artifact.token);
+      window.localStorage.removeItem(uploadStorageKey(input.file));
+      return complete.artifact;
     },
     onSuccess: () => {
       uploadStartRef.current = false;
@@ -450,6 +605,11 @@ export function ReleasesPage({
       uploadAbortRef.current = null;
       if (uploadCancelledRef.current) {
         uploadCancelledRef.current = false;
+        return;
+      }
+      if (uploadPausedRef.current) {
+        setUploadState("paused");
+        setUploadStage("上传已暂停，可继续上传");
         return;
       }
       if (artifactToken)
@@ -483,6 +643,9 @@ export function ReleasesPage({
       setShowCreate(false);
       setFile(null);
       setArtifactToken("");
+      uploadSessionRef.current = null;
+      uploadedPartsRef.current.clear();
+      partProgressRef.current.clear();
       setUploadProgress(0);
       setUploadStage("");
       void queryClient.invalidateQueries({ queryKey: ["releases", tenantId] });
@@ -517,7 +680,8 @@ export function ReleasesPage({
     onError: () => setActionConfirmOpen(false),
   });
   const actionFeedback =
-    uploadMutation.isError || saveReleaseMutation.isError
+    (uploadMutation.isError && uploadState !== "paused") ||
+    saveReleaseMutation.isError
       ? {
           kind: "error" as const,
           message: `操作失败：${uploadError || uploadMutation.error?.message || saveReleaseMutation.error?.message || "请重试"}`,
@@ -599,13 +763,28 @@ export function ReleasesPage({
   };
   const cancelUpload = () => {
     uploadCancelledRef.current = true;
+    uploadPausedRef.current = false;
     uploadStartRef.current = false;
     uploadAbortRef.current?.abort();
     uploadAbortRef.current = null;
     uploadMutation.reset();
+    if (file) window.localStorage.removeItem(uploadStorageKey(file));
+    if (uploadSessionRef.current)
+      void adminApi
+        .deleteUploadSession(
+          tenantId,
+          uploadSessionRef.current.id,
+          uploadSessionRef.current.token,
+        )
+        .catch(() => undefined);
+    uploadSessionRef.current = null;
+    uploadedPartsRef.current.clear();
+    partProgressRef.current.clear();
     setUploadState("idle");
     setUploadStage("");
     setUploadProgress(0);
+    setUploadedBytes(0);
+    setUploadSpeed(0);
     if (artifactToken)
       void adminApi.deleteReleaseArtifact(tenantId, artifactToken);
     setArtifactToken("");
@@ -617,7 +796,20 @@ export function ReleasesPage({
     setUploadState("idle");
     setUploadError("");
     setArtifactToken("");
+    uploadPausedRef.current = false;
     window.setTimeout(() => startUpload(), 0);
+  };
+  const pauseUpload = () => {
+    if (uploadState !== "uploading") return;
+    uploadPausedRef.current = true;
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+  };
+  const resumeUpload = () => {
+    if (!file || uploadState !== "paused") return;
+    uploadPausedRef.current = false;
+    uploadStartRef.current = true;
+    uploadMutation.mutate({ file });
   };
   return (
     <>
@@ -856,12 +1048,24 @@ export function ReleasesPage({
               }
               onFileChange={(nextFile) => {
                 uploadAbortRef.current?.abort();
+                if (uploadSessionRef.current) {
+                  void adminApi
+                    .deleteUploadSession(
+                      tenantId,
+                      uploadSessionRef.current.id,
+                      uploadSessionRef.current.token,
+                    )
+                    .catch(() => undefined);
+                  uploadSessionRef.current = null;
+                }
                 if (artifactToken)
                   void adminApi.deleteReleaseArtifact(tenantId, artifactToken);
                 uploadMutation.reset();
                 setUploadError("");
                 setArtifactToken("");
                 setUploadProgress(0);
+                setUploadedBytes(0);
+                setUploadSpeed(0);
                 setUploadStage("");
                 setUploadState("idle");
                 setFile(nextFile);
@@ -931,10 +1135,23 @@ export function ReleasesPage({
                   ? "安装包已上传，可从底部按钮保存发布记录"
                   : "文件选择后会自动开始上传"}
             </span>
-            {(uploadState === "preparing" || uploadState === "uploading") && (
-              <Button variant="ghost" onClick={cancelUpload}>
-                取消上传
-              </Button>
+            {uploadState === "uploading" && (
+              <>
+                <Button variant="ghost" onClick={pauseUpload}>
+                  暂停上传
+                </Button>
+                <Button variant="ghost" onClick={cancelUpload}>
+                  取消上传
+                </Button>
+              </>
+            )}
+            {uploadState === "paused" && (
+              <>
+                <Button onClick={resumeUpload}>继续上传</Button>
+                <Button variant="ghost" onClick={cancelUpload}>
+                  取消上传
+                </Button>
+              </>
             )}
             {uploadState === "error" && (
               <Button variant="ghost" onClick={retryUpload}>
@@ -953,7 +1170,14 @@ export function ReleasesPage({
                 </span>
                 <strong>{uploadProgress}%</strong>
               </div>
-              <div className="progress">
+              <div
+                className="progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={uploadProgress}
+                aria-label="APK 上传进度"
+              >
                 <span style={{ width: `${uploadProgress}%` }} />
               </div>
               <small className="muted">
@@ -961,8 +1185,13 @@ export function ReleasesPage({
                   ? "文件已上传，保存发布记录时服务端会校验包身份并写入列表。"
                   : uploadState === "error"
                     ? "文件仍保留在当前表单中，可直接重新上传。"
-                    : `${file.name} · ${formatFileSize((file.size * uploadProgress) / 100)} / ${formatFileSize(file.size)}`}
+                    : `${file.name} · ${formatFileSize(uploadedBytes)} / ${formatFileSize(file.size)}${uploadSpeed > 0 ? ` · ${formatFileSize(uploadSpeed)}/s` : ""}`}
               </small>
+              {(uploadState === "uploading" || uploadState === "paused") && (
+                <small className="muted upload-resume-hint">
+                  16 MB 分片 · 最多 3 路并发 · 刷新后重新选择同一文件即可继续
+                </small>
+              )}
             </div>
           )}
         </div>

@@ -12,7 +12,12 @@ const apiMocks = vi.hoisted(() => ({
   createReleaseArtifactUpload: vi.fn(),
   createReleaseFromArtifact: vi.fn(),
   deleteReleaseArtifact: vi.fn(),
+  uploadUploadSessionPart: vi.fn(),
   uploadArtifactFile: vi.fn(),
+  createUploadSession: vi.fn(),
+  getUploadSession: vi.fn(),
+  completeUploadSession: vi.fn(),
+  deleteUploadSession: vi.fn(),
   otaReleases: vi.fn(),
   otaBaseReleases: vi.fn(),
   createOtaArtifactUpload: vi.fn(),
@@ -25,6 +30,7 @@ vi.mock("../../core/api", () => ({
   adminApi: apiMocks,
   publicApiUrl: (path: string) => `https://api.example.com${path}`,
   uploadArtifactFile: apiMocks.uploadArtifactFile,
+  uploadUploadSessionPart: apiMocks.uploadUploadSessionPart,
 }));
 
 vi.mock("qrcode", () => ({
@@ -34,6 +40,7 @@ vi.mock("qrcode", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.localStorage.clear();
 });
 
 function renderPage() {
@@ -254,7 +261,27 @@ describe("ReleasesPage actions", () => {
       nextCursor: null,
       hasMore: false,
     });
-    apiMocks.createReleaseArtifactUpload.mockResolvedValue({
+    apiMocks.createUploadSession.mockResolvedValue({
+      session: {
+        id: "upload-1",
+        uploadType: "apk",
+        fileName: "dex-1.3.0.apk",
+        contentType: "application/vnd.android.package-archive",
+        size: 10,
+        partSize: 16 * 1024 * 1024,
+        totalParts: 1,
+        status: "active",
+        expiresAt: "2026-08-25T02:00:00Z",
+        uploadedParts: [],
+      },
+    });
+    apiMocks.uploadUploadSessionPart.mockImplementation(
+      async (_session, partNumber, blob, onProgress) => {
+        onProgress(blob.size, blob.size);
+        return { partNumber, etag: "etag-1", size: blob.size };
+      },
+    );
+    apiMocks.completeUploadSession.mockResolvedValue({
       artifact: {
         id: "artifact-1",
         token: "artifact-token",
@@ -263,17 +290,9 @@ describe("ReleasesPage actions", () => {
         size: 10,
         objectKey:
           "tenants/tenant-a/release-uploads/artifact-1/application.apk",
-        expiresAt: "2026-08-25T00:15:00Z",
-      },
-      upload: {
-        method: "PUT",
-        url: "https://storage.example/upload",
-        headers: { "content-type": "application/vnd.android.package-archive" },
-        expiresAt: "2026-08-25T00:15:00Z",
-        requiresCredentials: true,
+        expiresAt: "2026-08-25T02:00:00Z",
       },
     });
-    apiMocks.uploadArtifactFile.mockResolvedValue(undefined);
     apiMocks.createReleaseFromArtifact.mockResolvedValue({
       release: {
         id: "release-1",
@@ -300,19 +319,28 @@ describe("ReleasesPage actions", () => {
     await user.type(screen.getByLabelText("ja-JP 发布说明"), "安定性を改善");
 
     await waitFor(() => {
-      expect(apiMocks.createReleaseArtifactUpload).toHaveBeenCalledWith(
+      expect(apiMocks.createUploadSession).toHaveBeenCalledWith(
         "tenant-a",
         expect.objectContaining({
+          uploadType: "apk",
           fileName: "dex-1.3.0.apk",
           size: 10,
+          partSize: 16 * 1024 * 1024,
         }),
       );
     });
-    expect(apiMocks.uploadArtifactFile).toHaveBeenCalledWith(
-      expect.objectContaining({ method: "PUT" }),
-      apk,
+    expect(apiMocks.uploadUploadSessionPart).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "upload-1" }),
+      1,
+      expect.any(Blob),
       expect.any(Function),
       expect.any(AbortSignal),
+    );
+    expect(apiMocks.completeUploadSession).toHaveBeenCalledWith(
+      "tenant-a",
+      "upload-1",
+      [expect.objectContaining({ partNumber: 1, etag: "etag-1" })],
+      undefined,
     );
     await user.click(
       await screen.findByRole("button", { name: "保存发布记录" }),
@@ -334,6 +362,85 @@ describe("ReleasesPage actions", () => {
       ),
     );
     expect(apiMocks.action).not.toHaveBeenCalled();
+  });
+
+  it("resumes a persisted multipart session and skips completed parts", async () => {
+    apiMocks.releases.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+    });
+    apiMocks.getUploadSession.mockResolvedValue({
+      session: {
+        id: "upload-resume",
+        token: "session-token",
+        uploadType: "apk",
+        fileName: "resume.apk",
+        contentType: "application/vnd.android.package-archive",
+        size: 10,
+        partSize: 5,
+        totalParts: 2,
+        status: "active",
+        expiresAt: "2026-08-25T02:00:00Z",
+        uploadedParts: [{ partNumber: 1, etag: "etag-1", size: 5 }],
+      },
+    });
+    apiMocks.uploadUploadSessionPart.mockResolvedValue({
+      partNumber: 2,
+      etag: "etag-2",
+      size: 5,
+    });
+    apiMocks.completeUploadSession.mockResolvedValue({
+      artifact: {
+        id: "artifact-resume",
+        token: "artifact-token",
+        fileName: "resume.apk",
+        contentType: "application/vnd.android.package-archive",
+        size: 10,
+        objectKey: "tenants/tenant-a/upload-sessions/upload-resume/payload.apk",
+        expiresAt: "2026-08-25T02:00:00Z",
+      },
+    });
+    const apk = new File(["0123456789"], "resume.apk", {
+      type: "application/vnd.android.package-archive",
+      lastModified: 1,
+    });
+    window.localStorage.setItem(
+      "rn-admin:apk-upload:tenant-a:resume.apk:10:1",
+      JSON.stringify({ id: "upload-resume", token: "session-token" }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "上传 APK" }));
+    await user.upload(screen.getByLabelText("APK 安装包文件选择"), apk);
+
+    await waitFor(() =>
+      expect(apiMocks.getUploadSession).toHaveBeenCalledWith(
+        "tenant-a",
+        "upload-resume",
+        "session-token",
+      ),
+    );
+    expect(apiMocks.createUploadSession).not.toHaveBeenCalled();
+    expect(apiMocks.uploadUploadSessionPart).toHaveBeenCalledTimes(1);
+    expect(apiMocks.uploadUploadSessionPart).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "upload-resume" }),
+      2,
+      expect.any(Blob),
+      expect.any(Function),
+      expect.any(AbortSignal),
+    );
+    await waitFor(() =>
+      expect(apiMocks.completeUploadSession).toHaveBeenCalledWith(
+        "tenant-a",
+        "upload-resume",
+        [
+          { partNumber: 1, etag: "etag-1", size: 5 },
+          { partNumber: 2, etag: "etag-2", size: 5 },
+        ],
+        "session-token",
+      ),
+    );
   });
 });
 

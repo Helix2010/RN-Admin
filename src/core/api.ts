@@ -318,6 +318,63 @@ const releaseArtifactUploadSchema = z.object({
   upload: uploadSchema,
 });
 
+const uploadPartSchema = z.object({
+  partNumber: z.number().int().positive(),
+  etag: z.string(),
+  size: z.number().positive(),
+});
+const uploadSessionSchema = z
+  .object({
+    id: z.string(),
+    token: z.string().optional(),
+    uploadType: z.enum(["apk", "ota"]),
+    fileName: z.string(),
+    contentType: z.string(),
+    size: z.number(),
+    partSize: z.number().int().positive(),
+    totalParts: z.number().int().positive(),
+    status: z
+      .enum(["active", "completed", "aborted", "expired"])
+      .default("active"),
+    expiresAt: z.string(),
+    uploadedParts: z.array(uploadPartSchema).optional().default([]),
+    parts: z.array(uploadPartSchema).optional(),
+  })
+  .transform((value) => ({
+    ...value,
+    uploadedParts:
+      value.uploadedParts.length > 0
+        ? value.uploadedParts
+        : (value.parts ?? []),
+  }));
+const uploadSessionResponseSchema = z
+  .union([
+    z.object({ session: uploadSessionSchema, token: z.string().optional() }),
+    uploadSessionSchema,
+  ])
+  .transform((value) =>
+    "session" in value
+      ? {
+          session: value.token
+            ? { ...value.session, token: value.token }
+            : value.session,
+        }
+      : { session: value },
+  );
+const uploadSessionCompleteSchema = z.object({
+  artifact: z.object({
+    id: z.string(),
+    token: z.string(),
+    fileName: z.string(),
+    contentType: z.string(),
+    size: z.number(),
+    objectKey: z.string(),
+    expiresAt: z.string(),
+  }),
+});
+export type UploadSession = z.infer<typeof uploadSessionSchema>;
+export type UploadSessionPart = z.infer<typeof uploadPartSchema>;
+
 const otaArtifactUploadSchema = z.object({
   artifact: z.object({
     id: z.string(),
@@ -468,6 +525,52 @@ export const adminApi = {
       `/v1/admin/release-artifacts/upload?token=${encodeURIComponent(token)}`,
       z.object({ deleted: z.literal(true) }),
       { method: "DELETE", headers: { "x-release-artifact-token": token } },
+    );
+  },
+  createUploadSession: (tenantId: string, payload: unknown) => {
+    void tenantId;
+    return request("/v1/admin/upload-sessions", uploadSessionResponseSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  getUploadSession: (tenantId: string, id: string, token?: string) => {
+    void tenantId;
+    return request(
+      `/v1/admin/upload-sessions/${encodeURIComponent(id)}`,
+      uploadSessionResponseSchema,
+      token ? { headers: { "x-upload-session-token": token } } : undefined,
+    );
+  },
+  completeUploadSession: (
+    tenantId: string,
+    id: string,
+    parts: UploadSessionPart[],
+    token?: string,
+  ) => {
+    void tenantId;
+    return request(
+      `/v1/admin/upload-sessions/${encodeURIComponent(id)}/complete`,
+      uploadSessionCompleteSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({ parts }),
+        headers: token ? { "x-upload-session-token": token } : undefined,
+      },
+    );
+  },
+  deleteUploadSession: (tenantId: string, id: string, token?: string) => {
+    void tenantId;
+    return request(
+      `/v1/admin/upload-sessions/${encodeURIComponent(id)}`,
+      z.union([
+        z.object({ deleted: z.literal(true) }),
+        z.object({ cancelled: z.literal(true) }),
+      ]),
+      {
+        method: "DELETE",
+        headers: token ? { "x-upload-session-token": token } : undefined,
+      },
     );
   },
   config: (tenantId: string) => {
@@ -635,6 +738,66 @@ export function uploadArtifactFile(
     });
     xhr.addEventListener("abort", () => {
       signal?.removeEventListener("abort", abortUpload);
+      reject(new ApiError("上传已取消", 0));
+    });
+    xhr.send(file);
+  });
+}
+
+export function uploadUploadSessionPart(
+  session: UploadSession,
+  partNumber: number,
+  file: Blob,
+  onProgress: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadSessionPart> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ApiError("上传已取消", 0));
+      return;
+    }
+    const xhr = new XMLHttpRequest();
+    const abortUpload = () => xhr.abort();
+    signal?.addEventListener("abort", abortUpload, { once: true });
+    xhr.open(
+      "PUT",
+      `${baseUrl}/v1/admin/upload-sessions/${encodeURIComponent(session.id)}/parts/${partNumber}`,
+    );
+    xhr.withCredentials = true;
+    xhr.setRequestHeader(
+      "content-type",
+      session.contentType || "application/octet-stream",
+    );
+    if (session.token)
+      xhr.setRequestHeader("x-upload-session-token", session.token);
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) onProgress(event.loaded, event.total);
+    });
+    const cleanup = () => signal?.removeEventListener("abort", abortUpload);
+    xhr.addEventListener("load", () => {
+      cleanup();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        let parsed: unknown;
+        try {
+          parsed = xhr.responseText ? JSON.parse(xhr.responseText) : undefined;
+        } catch {
+          parsed = undefined;
+        }
+        const result = uploadPartSchema.safeParse(
+          (parsed as { part?: unknown } | undefined)?.part ?? parsed,
+        );
+        if (result.success) resolve(result.data);
+        else reject(new ApiError("上传服务返回的分片信息无效", 502));
+      } else {
+        reject(new ApiError(`分片上传失败 (${xhr.status})`, xhr.status));
+      }
+    });
+    xhr.addEventListener("error", () => {
+      cleanup();
+      reject(new ApiError("无法连接上传服务", 0));
+    });
+    xhr.addEventListener("abort", () => {
+      cleanup();
       reject(new ApiError("上传已取消", 0));
     });
     xhr.send(file);
