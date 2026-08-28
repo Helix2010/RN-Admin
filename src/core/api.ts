@@ -301,7 +301,7 @@ const uploadSchema = z.object({
   method: z.literal("PUT"),
   url: z.string(),
   headers: z.record(z.string(), z.string()),
-  expiresAt: z.string(),
+  expiresAt: z.string().optional(),
   requiresCredentials: z.boolean().default(false),
 });
 

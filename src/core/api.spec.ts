@@ -42,4 +42,42 @@ describe("adminApi.releases", () => {
 
     expect(result.items[0]?.fileMetadata).toBeUndefined();
   });
+
+  it("accepts OTA upload tickets from older servers without upload expiry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            artifact: {
+              id: "ota-artifact",
+              token: "ota-token",
+              fileName: "ota.zip",
+              contentType: "application/zip",
+              size: 1024,
+              objectKey: "tenants/tenant-a/ota-uploads/ota.zip",
+              expiresAt: "2026-08-28T01:00:00Z",
+            },
+            upload: {
+              method: "PUT",
+              url: "https://storage.example/ota",
+              headers: { "content-type": "application/zip" },
+              requiresCredentials: true,
+            },
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const result = await adminApi.createOtaArtifactUpload("tenant-a", {
+      fileName: "ota.zip",
+      contentType: "application/zip",
+      size: 1024,
+      baseReleaseId: "release-base",
+      channel: "production",
+    });
+
+    expect(result.upload.expiresAt).toBeUndefined();
+  });
 });

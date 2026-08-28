@@ -741,7 +741,12 @@ export function ReleasesPage({
         无法连接 RN-Server：{query.error.message}
       </div>
     );
-  const releases = query.data?.items ?? [];
+  const releases = [...(query.data?.items ?? [])].sort(
+    (left, right) =>
+      right.buildNumber - left.buildNumber ||
+      Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
+      right.id.localeCompare(left.id),
+  );
   const runAction = (id: string, action: string) => {
     setPendingAction({ id, action });
     setActionReason("");
@@ -1328,6 +1333,7 @@ export function ReleasesPage({
           <table>
             <thead>
               <tr>
+                <th>序号</th>
                 <th>版本</th>
                 <th>平台 / 渠道</th>
                 <th>状态</th>
@@ -1337,8 +1343,9 @@ export function ReleasesPage({
               </tr>
             </thead>
             <tbody>
-              {releases.map((release) => (
+              {releases.map((release, index) => (
                 <tr key={release.id}>
+                  <td className="release-index muted mono">{index + 1}</td>
                   <td>
                     <strong>v{release.version}</strong>
                     <div className="muted mono">

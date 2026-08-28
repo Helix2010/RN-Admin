@@ -569,6 +569,11 @@ button {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+.release-index {
+  width: 46px;
+  color: var(--muted);
+  text-align: center;
+}
 .upload-progress-panel strong {
   color: var(--brand);
 }

@@ -133,6 +133,45 @@ function renderReleaseManagementPage() {
 }
 
 describe("ReleasesPage actions", () => {
+  it("sorts releases by descending build and shows stable row numbers", async () => {
+    apiMocks.releases.mockResolvedValue({
+      items: [
+        {
+          id: "release-old",
+          platform: "android",
+          version: "1.1.0",
+          buildNumber: 4,
+          runtimeVersion: "runtime-old",
+          status: "verified",
+          releaseNotes: { "zh-CN": ["旧版本"] },
+          createdAt: "2026-08-28T00:00:00Z",
+          updatedAt: "2026-08-28T01:00:00Z",
+          lastAction: null,
+        },
+        {
+          id: "release-new",
+          platform: "android",
+          version: "1.1.2",
+          buildNumber: 6,
+          runtimeVersion: "runtime-new",
+          status: "active",
+          releaseNotes: { "zh-CN": ["新版本"] },
+          createdAt: "2026-08-28T00:00:00Z",
+          updatedAt: "2026-08-28T00:30:00Z",
+          lastAction: "publish",
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+    renderPage();
+
+    const rows = await screen.findAllByRole("row");
+    expect(rows[0]?.textContent).toContain("序号");
+    expect(rows[1]?.textContent).toContain("1v1.1.2");
+    expect(rows[2]?.textContent).toContain("2v1.1.0");
+  });
+
   it("opens the OTA tab with the selected APK as context", async () => {
     apiMocks.releases.mockResolvedValue({
       items: [
