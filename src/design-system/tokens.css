@@ -567,6 +567,48 @@ button {
   color: var(--warning);
   font-family: inherit;
 }
+.release-note-language-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.release-note-language-tab {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+.release-note-language-tab > span {
+  color: var(--success-text);
+  font-size: 8px;
+}
+.release-note-language-tab:hover,
+.release-note-language-tab:focus-visible {
+  color: var(--text);
+  background: var(--hover);
+  outline: none;
+}
+.release-note-language-tab.is-active {
+  color: var(--button-text);
+  background: var(--brand);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 22%, transparent);
+}
+.release-note-language-tab.is-active > span {
+  color: currentColor;
+}
 .main {
   margin-left: 252px;
   width: calc(100% - 252px);
@@ -1930,6 +1972,67 @@ tr:hover td {
   padding: 7px 10px;
   color: var(--muted);
   font-size: 12px;
+}
+.ota-strategy-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.ota-strategy-field legend {
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+.ota-strategy-grid {
+  display: grid;
+  gap: 10px;
+}
+.ota-strategy-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel-2);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+.ota-strategy-option:hover,
+.ota-strategy-option.is-selected {
+  border-color: var(--brand);
+  background: var(--hover);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--brand) 12%, transparent);
+}
+.ota-strategy-option input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: var(--brand);
+}
+.ota-strategy-option strong,
+.ota-strategy-option small {
+  display: block;
+}
+.ota-strategy-option small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.strategy-pill {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--brand-strong);
+  background: var(--icon-bg);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 .textarea {
   min-height: 76px;

@@ -7,6 +7,7 @@ import { OtaPage, ReleasesPage } from "./pages";
 
 const apiMocks = vi.hoisted(() => ({
   releases: vi.fn(),
+  localization: vi.fn(),
   action: vi.fn(),
   createReleaseArtifactUpload: vi.fn(),
   createReleaseFromArtifact: vi.fn(),
@@ -36,6 +37,44 @@ afterEach(() => {
 });
 
 function renderPage() {
+  apiMocks.localization.mockResolvedValue({
+    settings: {
+      schemaVersion: 2,
+      fallbackLanguage: "zh-CN",
+      refreshIntervalSeconds: 21600,
+      languages: {
+        "zh-CN": {
+          label: "简体中文",
+          nativeName: "简体中文",
+          enabled: true,
+          direction: "ltr",
+          sort: 1,
+          source: "global",
+          publishStatus: "published",
+        },
+        "en-US": {
+          label: "English",
+          nativeName: "English",
+          enabled: true,
+          direction: "ltr",
+          sort: 2,
+          source: "global",
+          publishStatus: "published",
+        },
+        "ja-JP": {
+          label: "Japanese",
+          nativeName: "日本語",
+          enabled: true,
+          direction: "ltr",
+          sort: 3,
+          source: "tenant",
+          publishStatus: "published",
+        },
+      },
+    },
+    documents: { items: [], total: 0 },
+    tenantVersion: 1,
+  });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -183,6 +222,13 @@ describe("ReleasesPage actions", () => {
       type: "application/vnd.android.package-archive",
     });
     await user.upload(screen.getByLabelText("APK 安装包文件选择"), apk);
+    await user.click(await screen.findByRole("tab", { name: "English" }));
+    await user.type(
+      screen.getByLabelText("en-US 发布说明"),
+      "Improve stability",
+    );
+    await user.click(screen.getByRole("tab", { name: "日本語" }));
+    await user.type(screen.getByLabelText("ja-JP 发布说明"), "安定性を改善");
 
     await waitFor(() => {
       expect(apiMocks.createReleaseArtifactUpload).toHaveBeenCalledWith(
@@ -210,6 +256,11 @@ describe("ReleasesPage actions", () => {
           platform: "android",
           version: "1.3.0",
           buildNumber: 130,
+          releaseNotes: {
+            "zh-CN": ["修复已知问题并优化体验"],
+            "en-US": ["Improve stability"],
+            "ja-JP": ["安定性を改善"],
+          },
         }),
       ),
     );
@@ -266,6 +317,7 @@ describe("OtaPage", () => {
       await screen.findByLabelText("基线 APK"),
       "release-base",
     );
+    await user.click(screen.getByRole("radio", { name: /立即重启生效/ }));
     const otaFile = new File(["ota-package"], "ota.zip", {
       type: "application/zip",
     });
@@ -291,6 +343,7 @@ describe("OtaPage", () => {
           artifactToken: "ota-token",
           baseReleaseId: "release-base",
           channel: "production",
+          applyStrategy: "immediate",
         }),
       ),
     );

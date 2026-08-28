@@ -43,6 +43,7 @@ const otaReleaseSchema = z.object({
   baseRelease: otaBaseReleaseSchema.optional(),
   platform: z.enum(["android", "ios"]),
   channel: z.string(),
+  applyStrategy: z.enum(["next_launch", "immediate"]).default("next_launch"),
   runtimeVersion: z.string(),
   revision: z.number().int().positive(),
   updateId: z.string(),

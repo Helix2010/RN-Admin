@@ -210,6 +210,9 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
   const query = useAdminQuery(["releases", tenantId], () =>
     adminApi.releases(tenantId),
   );
+  const localizationQuery = useAdminQuery(["localization", tenantId], () =>
+    adminApi.localization(),
+  );
   const [showCreate, setShowCreate] = React.useState(false);
   const [publishedRelease, setPublishedRelease] =
     React.useState<Release | null>(null);
@@ -220,8 +223,14 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
   const [platform, setPlatform] = React.useState("android");
   const [version, setVersion] = React.useState("");
   const [buildNumber, setBuildNumber] = React.useState("");
-  const [releaseNotes, setReleaseNotes] =
-    React.useState("修复已知问题并优化体验");
+  const [releaseNotes, setReleaseNotes] = React.useState<
+    Record<string, string>
+  >({
+    "zh-CN": "修复已知问题并优化体验",
+  });
+  const [activeReleaseNoteLanguage, setActiveReleaseNoteLanguage] =
+    React.useState("zh-CN");
+  const releaseNoteLanguageInitialized = React.useRef(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [uploadStage, setUploadStage] = React.useState("");
   const [uploadState, setUploadState] = React.useState<
@@ -245,6 +254,60 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
   const [actionReason, setActionReason] = React.useState("");
   const [actionReasonError, setActionReasonError] = React.useState("");
   const [actionConfirmOpen, setActionConfirmOpen] = React.useState(false);
+  const releaseNoteLanguages = React.useMemo(
+    () =>
+      Object.entries(localizationQuery.data?.settings.languages ?? {})
+        .filter(([, language]) => language.enabled)
+        .sort(([, left], [, right]) => left.sort - right.sort),
+    [localizationQuery.data?.settings.languages],
+  );
+  const requiredReleaseNoteLanguage =
+    releaseNoteLanguages.find(
+      ([code]) => code === localizationQuery.data?.settings.fallbackLanguage,
+    )?.[0] ??
+    releaseNoteLanguages[0]?.[0] ??
+    "";
+  const releaseNotesValid =
+    requiredReleaseNoteLanguage !== "" &&
+    (releaseNotes[requiredReleaseNoteLanguage] ?? "").trim().length >= 3;
+  const normalizedReleaseNotes = Object.fromEntries(
+    releaseNoteLanguages
+      .map(([language]) => [
+        language,
+        (releaseNotes[language] ?? "")
+          .split("\n")
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ])
+      .filter(([, value]) => value.length > 0),
+  );
+  React.useEffect(() => {
+    if (releaseNoteLanguages.length === 0) return;
+    if (!releaseNoteLanguageInitialized.current) {
+      releaseNoteLanguageInitialized.current = true;
+      setActiveReleaseNoteLanguage(requiredReleaseNoteLanguage);
+    }
+    if (
+      !releaseNoteLanguages.some(([code]) => code === activeReleaseNoteLanguage)
+    ) {
+      setActiveReleaseNoteLanguage(releaseNoteLanguages[0]![0]);
+    }
+    setReleaseNotes((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const [code] of releaseNoteLanguages) {
+        if (!(code in next)) {
+          next[code] = "";
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [
+    activeReleaseNoteLanguage,
+    releaseNoteLanguages,
+    requiredReleaseNoteLanguage,
+  ]);
   const uploadMutation = useMutation({
     mutationFn: async (input: { file: File }) => {
       const controller = new AbortController();
@@ -305,8 +368,8 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
       if (!artifactToken) throw new Error("请先完成文件上传");
       if (!version.trim() || Number(buildNumber) < 1)
         throw new Error("请填写有效的版本号和构建号");
-      if (releaseNotes.trim().length < 3)
-        throw new Error("请填写至少 3 个字符的发布说明");
+      if (!releaseNotesValid)
+        throw new Error(`请填写 ${requiredReleaseNoteLanguage} 发布说明`);
       setUploadState("saving");
       setUploadStage("正在校验安装包并保存发布记录");
       const result = await adminApi.createReleaseFromArtifact(tenantId, {
@@ -314,12 +377,7 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
         platform,
         version: version.trim(),
         buildNumber: Number(buildNumber),
-        releaseNotes: {
-          "zh-CN": releaseNotes
-            .split("\n")
-            .map((item) => item.trim())
-            .filter(Boolean),
-        },
+        releaseNotes: normalizedReleaseNotes,
       });
       return result.release;
     },
@@ -635,9 +693,10 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
                 uploadMutation.isPending ||
                 saveReleaseMutation.isPending ||
                 uploadState !== "uploaded" ||
+                !localizationQuery.isSuccess ||
                 !version.trim() ||
                 Number(buildNumber) < 1 ||
-                releaseNotes.trim().length < 3
+                !releaseNotesValid
               }
               onClick={() => saveReleaseMutation.mutate()}
             >
@@ -714,14 +773,58 @@ export function ReleasesPage({ tenantId }: AdminPageProps) {
             />
           </div>
           <label className="form-field release-notes-field">
-            <span>发布说明</span>
-            <textarea
-              className="input textarea"
-              placeholder="例如：修复行情刷新问题，优化钱包连接体验"
-              value={releaseNotes}
-              disabled={saveReleaseMutation.isPending}
-              onChange={(event) => setReleaseNotes(event.target.value)}
-            />
+            <span>发布说明（多语言）</span>
+            {localizationQuery.isLoading ? (
+              <div className="prerequisite-panel">
+                正在读取当前租户语言配置…
+              </div>
+            ) : localizationQuery.isError ? (
+              <div className="error-banner">
+                无法读取语言配置，请刷新后重试：
+                {localizationQuery.error.message}
+              </div>
+            ) : (
+              <>
+                <div
+                  className="release-note-language-tabs"
+                  role="tablist"
+                  aria-label="发布说明语言"
+                >
+                  {releaseNoteLanguages.map(([code, language]) => (
+                    <button
+                      key={code}
+                      className={`release-note-language-tab${activeReleaseNoteLanguage === code ? " is-active" : ""}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={activeReleaseNoteLanguage === code}
+                      onClick={() => setActiveReleaseNoteLanguage(code)}
+                    >
+                      {language.nativeName || language.label || code}
+                      {code === requiredReleaseNoteLanguage ? "（默认）" : ""}
+                      {releaseNotes[code]?.trim() ? (
+                        <span aria-label="已填写">●</span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  className="input textarea"
+                  placeholder="例如：修复行情刷新问题，优化钱包连接体验"
+                  value={releaseNotes[activeReleaseNoteLanguage] ?? ""}
+                  disabled={saveReleaseMutation.isPending}
+                  onChange={(event) =>
+                    setReleaseNotes((current) => ({
+                      ...current,
+                      [activeReleaseNoteLanguage]: event.target.value,
+                    }))
+                  }
+                  aria-label={`${activeReleaseNoteLanguage} 发布说明`}
+                />
+                <small>
+                  支持语言来自多语言管理；默认语言必须填写，其他语言可选。
+                </small>
+              </>
+            )}
           </label>
           <div className="release-upload-actions">
             <span className="muted">
@@ -990,6 +1093,9 @@ export function OtaPage({ tenantId }: AdminPageProps) {
   const [showCreate, setShowCreate] = React.useState(false);
   const [platform, setPlatform] = React.useState<"android" | "ios">("android");
   const [channel, setChannel] = React.useState("production");
+  const [applyStrategy, setApplyStrategy] = React.useState<
+    "next_launch" | "immediate"
+  >("next_launch");
   const [baseReleaseId, setBaseReleaseId] = React.useState("");
   const baseQuery = useAdminQuery(
     ["ota-base-releases", tenantId, platform],
@@ -1085,6 +1191,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
         artifactToken,
         baseReleaseId,
         channel,
+        applyStrategy,
         releaseNotes: {
           "zh-CN": releaseNotes
             .split("\n")
@@ -1137,6 +1244,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
     setUploadStage("");
     setUploadError("");
     setBaseReleaseId("");
+    setApplyStrategy("next_launch");
     setSourceCommitSha("");
     uploadMutation.reset();
     saveMutation.reset();
@@ -1234,6 +1342,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                 <th>基线 APK</th>
                 <th>平台 / 通道</th>
                 <th>Runtime / Revision</th>
+                <th>生效策略</th>
                 <th>状态</th>
                 <th>更新时间</th>
                 <th>操作</th>
@@ -1264,6 +1373,13 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                   <td className="mono">
                     <RuntimeVersionValue value={release.runtimeVersion} />
                     <div className="muted">revision {release.revision}</div>
+                  </td>
+                  <td>
+                    <span className="strategy-pill">
+                      {release.applyStrategy === "immediate"
+                        ? "立即重启"
+                        : "下次启动"}
+                    </span>
                   </td>
                   <td>
                     <StatusPill status={release.status} />
@@ -1398,6 +1514,41 @@ export function OtaPage({ tenantId }: AdminPageProps) {
             <option value="production">production</option>
             <option value="staging">staging</option>
           </SelectField>
+          <fieldset className="form-field ota-strategy-field">
+            <legend>生效策略</legend>
+            <div className="ota-strategy-grid">
+              <label
+                className={`ota-strategy-option${applyStrategy === "next_launch" ? " is-selected" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="ota-apply-strategy"
+                  value="next_launch"
+                  checked={applyStrategy === "next_launch"}
+                  onChange={() => setApplyStrategy("next_launch")}
+                />
+                <span>
+                  <strong>下次启动生效</strong>
+                  <small>下载完成后不打断当前使用，下次打开 App 时应用。</small>
+                </span>
+              </label>
+              <label
+                className={`ota-strategy-option${applyStrategy === "immediate" ? " is-selected" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="ota-apply-strategy"
+                  value="immediate"
+                  checked={applyStrategy === "immediate"}
+                  onChange={() => setApplyStrategy("immediate")}
+                />
+                <span>
+                  <strong>立即重启生效</strong>
+                  <small>下载完成后由 App 提示用户确认，确认后重启应用。</small>
+                </span>
+              </label>
+            </div>
+          </fieldset>
           <div className="form-field">
             <span>OTA 资源包</span>
             <FileDropzone
