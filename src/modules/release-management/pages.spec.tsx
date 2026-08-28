@@ -329,6 +329,9 @@ describe("ReleasesPage actions", () => {
         }),
       );
     });
+    expect(apiMocks.createUploadSession.mock.calls[0]?.[1]).not.toHaveProperty(
+      "fingerprint",
+    );
     expect(apiMocks.uploadUploadSessionPart).toHaveBeenCalledWith(
       expect.objectContaining({ id: "upload-1" }),
       1,

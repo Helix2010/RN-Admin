@@ -467,7 +467,6 @@ export function ReleasesPage({
                 input.file.type || "application/vnd.android.package-archive",
               size: input.file.size,
               partSize: 16 * 1024 * 1024,
-              fingerprint: uploadFingerprint(input.file),
             })
           ).session;
         }
@@ -480,7 +479,6 @@ export function ReleasesPage({
               input.file.type || "application/vnd.android.package-archive",
             size: input.file.size,
             partSize: 16 * 1024 * 1024,
-            fingerprint: uploadFingerprint(input.file),
           })
         ).session;
       }
