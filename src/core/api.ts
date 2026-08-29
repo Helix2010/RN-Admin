@@ -156,6 +156,38 @@ const installationListSchema = z.object({
   ),
   total: z.number(),
 });
+const pushOutboxSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string(),
+      eventType: z.string(),
+      status: z.string(),
+      attempts: z.number(),
+      lastError: z.string().nullable(),
+      createdAt: z.string(),
+      sentAt: z.string().nullable(),
+      sent: z.number(),
+      failed: z.number(),
+    }),
+  ),
+  total: z.number(),
+});
+const pushDeliveriesSchema = z.object({
+  items: z.array(
+    z.object({
+      eventId: z.string(),
+      installationId: z.string(),
+      provider: z.string(),
+      providerMessageId: z.string().nullable(),
+      status: z.string(),
+      failureCode: z.string().nullable(),
+      sentAt: z.string().nullable(),
+      deliveredAt: z.string().nullable(),
+      createdAt: z.string(),
+    }),
+  ),
+  total: z.number(),
+});
 export type Overview = z.infer<typeof overviewSchema>;
 const paletteSchema = z.object({
   primary: z.string().min(1),
@@ -571,6 +603,15 @@ export const adminApi = {
       }),
       { method: "POST", body: JSON.stringify({ reason, confirm: true }) },
     );
+  },
+  pushOutbox: (tenantId: string) => {
+    void tenantId;
+    return request("/v1/admin/push/outbox", pushOutboxSchema);
+  },
+  pushDeliveries: (tenantId: string, status = "") => {
+    void tenantId;
+    const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+    return request(`/v1/admin/push/deliveries${suffix}`, pushDeliveriesSchema);
   },
   releases: (tenantId: string) => {
     void tenantId;

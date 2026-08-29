@@ -1,6 +1,7 @@
 import { LayoutDashboard, Rocket } from "lucide-react";
 import { DashboardPage, ReleaseManagementPage } from "./pages";
 import { InstallationsPage } from "./installations-page";
+import { PushEventsPage } from "./push-events-page";
 import type { AdminPlugin } from "../../plugin-system/types";
 
 export const releaseManagementPlugin: AdminPlugin = {
@@ -11,11 +12,13 @@ export const releaseManagementPlugin: AdminPlugin = {
     { id: "releases", label: "发布管理", icon: "rocket" },
     { id: "dashboard", label: "发布总览", icon: "dashboard" },
     { id: "installations", label: "设备管理", icon: "smartphone" },
+    { id: "push-events", label: "通知记录", icon: "bell" },
   ],
   pages: {
     dashboard: DashboardPage,
     releases: ReleaseManagementPage,
     installations: InstallationsPage,
+    "push-events": PushEventsPage,
   },
 };
 export const releaseIcons = { dashboard: LayoutDashboard, rocket: Rocket };

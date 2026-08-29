@@ -65,6 +65,7 @@ const iconMap = {
   languages: Languages,
   palette: Palette,
   smartphone: Smartphone,
+  bell: Bell,
 };
 
 export function App() {
