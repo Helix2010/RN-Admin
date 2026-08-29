@@ -644,6 +644,16 @@ describe("OtaPage", () => {
     });
     await user.upload(screen.getByLabelText("OTA 资源包文件选择"), otaFile);
 
+    const defaultLanguageTab = await screen.findByRole("tab", {
+      name: /默认/,
+    });
+    expect(defaultLanguageTab.className).toContain(
+      "release-note-language-tab is-active",
+    );
+    expect(screen.getByRole("tab", { name: "English" }).className).toContain(
+      "release-note-language-tab",
+    );
+
     await waitFor(() =>
       expect(apiMocks.createOtaArtifactUpload).toHaveBeenCalledWith(
         "tenant-a",

@@ -2343,9 +2343,9 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                 <button
                   type="button"
                   key={code}
-                  className={
-                    activeReleaseNoteLanguage === code ? "is-active" : ""
-                  }
+                  role="tab"
+                  aria-selected={activeReleaseNoteLanguage === code}
+                  className={`release-note-language-tab${activeReleaseNoteLanguage === code ? " is-active" : ""}`}
                   onClick={() => setActiveReleaseNoteLanguage(code)}
                 >
                   {item.nativeName || item.label}
