@@ -116,6 +116,23 @@ const overviewSchema = z.object({
     note: z.string(),
   }),
 });
+const installationOverviewSchema = z.object({
+  generatedAt: z.string(),
+  total: z.number(),
+  active: z.object({
+    oneDay: z.number(),
+    sevenDays: z.number(),
+    thirtyDays: z.number(),
+  }),
+  versions: z.array(
+    z.object({
+      platform: z.enum(["android", "ios"]),
+      version: z.string(),
+      buildNumber: z.string(),
+      count: z.number(),
+    }),
+  ),
+});
 export type Overview = z.infer<typeof overviewSchema>;
 const paletteSchema = z.object({
   primary: z.string().min(1),
@@ -504,6 +521,13 @@ export const adminApi = {
   overview: (tenantId: string) => {
     void tenantId;
     return request("/v1/admin/overview", overviewSchema);
+  },
+  installationOverview: (tenantId: string) => {
+    void tenantId;
+    return request(
+      "/v1/admin/installations/overview",
+      installationOverviewSchema,
+    );
   },
   releases: (tenantId: string) => {
     void tenantId;

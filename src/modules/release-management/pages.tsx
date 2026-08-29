@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import * as React from "react";
 import {
-  Activity,
   ArrowUpRight,
   CheckCircle2,
   CirclePause,
@@ -178,6 +177,9 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
   const query = useAdminQuery(["overview", tenantId], () =>
     adminApi.overview(tenantId),
   );
+  const installations = useAdminQuery(["installation-overview", tenantId], () =>
+    adminApi.installationOverview(tenantId),
+  );
   if (query.isLoading)
     return (
       <EmptyState
@@ -214,9 +216,9 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
           <div className="metric-caption">Android / iOS / HarmonyOS</div>
         </Card>
         <Card className="metric">
-          <div className="metric-label">发布方式</div>
-          <div className="metric-value">全量</div>
-          <div className="metric-caption">校验通过后由管理员确认发布</div>
+          <div className="metric-label">安装实例</div>
+          <div className="metric-value">{installations.data?.total ?? "-"}</div>
+          <div className="metric-caption">当前租户已上报的安装实例</div>
         </Card>
         <Card className="metric">
           <div className="metric-label">待处理草稿</div>
@@ -224,11 +226,11 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
           <div className="metric-caption">需要完成校验后发布</div>
         </Card>
         <Card className="metric">
-          <div className="metric-label">可观测性状态</div>
+          <div className="metric-label">7 日活跃</div>
           <div className="metric-value">
-            <Activity size={25} color="#f4c86b" />
+            {installations.data?.active.sevenDays ?? "-"}
           </div>
-          <div className="metric-caption">生产前接入 telemetry</div>
+          <div className="metric-caption">最近七天有心跳的安装实例</div>
         </Card>
       </div>
       <div className="section-grid">
