@@ -2497,8 +2497,28 @@ tr:hover td {
   }
   .form-grid-3,
   .theme-workbench,
-  .config-two-column {
+  .config-two-column,
+  .distribution-grid {
     grid-template-columns: 1fr;
+  }
+  .release-upload-grid {
+    grid-template-columns: 1fr;
+  }
+  .distribution-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .config-list {
+    grid-template-columns: 1fr;
+  }
+  .config-meta {
+    flex-wrap: wrap;
+    gap: 8px 18px;
+  }
+  .theme-preview-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .theme-workbench {
+    gap: 16px;
   }
 }
 @media (max-width: 760px) {
@@ -2564,6 +2584,12 @@ tr:hover td {
   .page-heading > .button {
     width: 100%;
   }
+  .heading-actions {
+    flex-wrap: wrap;
+  }
+  .heading-actions > * {
+    flex: 1 1 auto;
+  }
   h1 {
     font-size: 26px;
   }
@@ -2581,6 +2607,71 @@ tr:hover td {
     padding-left: 16px;
     padding-right: 16px;
   }
+  .card-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card-header > * {
+    max-width: 100%;
+  }
+  .card-header .release-management-tabs {
+    margin-bottom: 0;
+  }
+  .distribution-side {
+    grid-template-columns: 1fr;
+  }
+  .config-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .toolbar,
+  .localization-toolbar,
+  .save-toolbar,
+  .save-composer-heading,
+  .save-composer-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .toolbar > *,
+  .localization-toolbar > *,
+  .save-toolbar > *,
+  .save-composer-heading > *,
+  .save-composer-footer > * {
+    width: 100%;
+  }
+  .save-actions {
+    flex-direction: column;
+  }
+  .side-panel {
+    width: 100%;
+  }
+  .side-panel-header,
+  .side-panel-footer,
+  .side-panel-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .share-dialog {
+    width: calc(100vw - 24px);
+    padding: 16px;
+  }
+  .qr-frame {
+    width: min(260px, 100%);
+    height: auto;
+    aspect-ratio: 1;
+  }
+  .qr-frame img {
+    width: 100%;
+    height: auto;
+  }
+  .file-dropzone {
+    align-items: flex-start;
+  }
+  .file-dropzone-action {
+    align-self: center;
+  }
   .table-wrap {
     overflow-x: auto;
   }
@@ -2590,6 +2681,27 @@ tr:hover td {
   .theme-workbench,
   .config-two-column {
     grid-template-columns: 1fr;
+  }
+  .form-grid-2,
+  .form-grid-3,
+  .palette-grid,
+  .ota-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .release-management-tabs,
+  .theme-mode-tabs,
+  .release-note-language-tabs {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .release-management-tabs button,
+  .theme-mode-tabs button,
+  .release-note-language-tab {
+    flex: 0 0 auto;
+  }
+  .brand-launch-preview {
+    min-height: 220px;
+    padding: 20px;
   }
   .share-dialog-content {
     grid-template-columns: 1fr;
