@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
+  Menu,
   ChevronRight,
   CircleHelp,
   LayoutDashboard,
@@ -72,6 +73,7 @@ export function App() {
   const queryClient = useQueryClient();
   const plugins = registeredPlugins;
   const [page, setPage] = useState(pageFromLocation);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   useEffect(() => {
     const syncFromBrowser = () => {
       const target = pageFromLocation();
@@ -96,6 +98,7 @@ export function App() {
       );
     }
     setPage(target);
+    setSidebarOpen(false);
   };
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const saved = window.localStorage.getItem("rn-admin-theme");
@@ -205,7 +208,15 @@ export function App() {
     "发布总览";
   return (
     <div className="shell">
-      <aside className="sidebar">
+      {sidebarOpen ? (
+        <button
+          className="sidebar-backdrop"
+          type="button"
+          aria-label="关闭菜单"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
+      <aside className={`sidebar${sidebarOpen ? " is-open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">D</div>
           <div>
@@ -213,30 +224,30 @@ export function App() {
             <span>Release Console</span>
           </div>
         </div>
-        <div className="nav-section">工作台</div>
-        {plugins.map((plugin) => (
-          <div key={plugin.id}>
-            <div className="nav-section" style={{ marginTop: 17 }}>
-              {plugin.label}
+        <div className="sidebar-nav">
+          <div className="nav-section">工作台</div>
+          {plugins.map((plugin) => (
+            <div key={plugin.id}>
+              <div className="nav-section">{plugin.label}</div>
+              {plugin.navigation.map((item) => {
+                const Icon =
+                  iconMap[item.icon as keyof typeof iconMap] ?? CircleHelp;
+                return (
+                  <button
+                    className={`nav-item ${page === item.id ? "active" : ""}`}
+                    key={item.id}
+                    aria-current={page === item.id ? "page" : undefined}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <Icon size={17} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
-            {plugin.navigation.map((item) => {
-              const Icon =
-                iconMap[item.icon as keyof typeof iconMap] ?? CircleHelp;
-              return (
-                <button
-                  className={`nav-item ${page === item.id ? "active" : ""}`}
-                  key={item.id}
-                  aria-current={page === item.id ? "page" : undefined}
-                  onClick={() => navigate(item.id)}
-                >
-                  <Icon size={17} />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-        ))}
-        <div style={{ position: "absolute", left: 18, right: 18, bottom: 22 }}>
+          ))}
+        </div>
+        <div className="sidebar-footer">
           <a
             className="nav-item"
             href="https://github.com/Helix2010/RN-Admin#readme"
@@ -255,6 +266,14 @@ export function App() {
       <main className="main">
         <header className="topbar">
           <div className="breadcrumb">
+            <button
+              className="mobile-menu-toggle"
+              type="button"
+              aria-label="打开菜单"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu size={18} />
+            </button>
             Admin{" "}
             <ChevronRight
               size={13}
