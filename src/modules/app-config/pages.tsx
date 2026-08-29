@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,7 +13,10 @@ import {
 import {
   adminApi,
   managedAppConfigSchema,
+  publicApiUrl,
   type AppConfig,
+  type BrandingView,
+  type LocalizationView,
   type ManagedAppConfig,
 } from "../../core/api";
 import {
@@ -98,6 +101,16 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
   const query = useQuery({
     queryKey: ["config", tenantId],
     queryFn: () => adminApi.config(tenantId),
+  });
+  const brandingQuery = useQuery({
+    queryKey: ["branding", tenantId],
+    queryFn: () => adminApi.branding(),
+    staleTime: 15_000,
+  });
+  const localizationQuery = useQuery({
+    queryKey: ["localization", tenantId],
+    queryFn: () => adminApi.localization(),
+    staleTime: 15_000,
   });
   const [draft, setDraft] = useState<ManagedAppConfig | null>(null);
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
@@ -258,9 +271,11 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
             setReasonError("");
           }}
           onContinueSave={continueSave}
+          branding={brandingQuery.data}
+          localization={localizationQuery.data}
         />
       ) : (
-        <ConfigSummary data={data} />
+        <ConfigSummary data={data} branding={brandingQuery.data} />
       )}
       <ConfirmDialog
         open={confirmOpen}
@@ -280,7 +295,32 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
   );
 }
 
-function ConfigSummary({ data }: { data: AppConfig }) {
+function ConfigSummary({
+  data,
+  branding,
+}: {
+  data: AppConfig;
+  branding?: BrandingView;
+}) {
+  const brandingConfig = branding?.config ?? {};
+  const launch =
+    brandingConfig.launch && typeof brandingConfig.launch === "object"
+      ? (brandingConfig.launch as Record<string, unknown>)
+      : {};
+  const launchEnabled = launch.enabled !== false;
+  const brandingVersion = branding?.metadata.version ?? 0;
+  const selectedVisual =
+    launch.defaultVisual && typeof launch.defaultVisual === "object"
+      ? (launch.defaultVisual as Record<string, unknown>)
+      : {};
+  const lightVisual =
+    selectedVisual.light && typeof selectedVisual.light === "object"
+      ? (selectedVisual.light as Record<string, unknown>)
+      : {};
+  const logo =
+    lightVisual.logo && typeof lightVisual.logo === "object"
+      ? (lightVisual.logo as Record<string, unknown>)
+      : undefined;
   return (
     <Card>
       <div className="card-header">
@@ -329,6 +369,17 @@ function ConfigSummary({ data }: { data: AppConfig }) {
               {data.metadata.databaseVersion}
             </span>
           </div>
+          <div className="config-item">
+            <Palette size={18} />
+            <strong>品牌与启动</strong>
+            <span>
+              {launchEnabled ? "启动页已启用" : "启动页已关闭"} · 品牌配置 v
+              {brandingVersion}
+              {typeof logo?.assetId === "string"
+                ? " · Logo 已配置"
+                : " · 使用内置 Logo"}
+            </span>
+          </div>
         </div>
         <div className="config-meta">
           <span>最近修改：{data.metadata.updatedBy}</span>
@@ -355,6 +406,8 @@ function ConfigEditor({
   onOpenSave,
   onCloseSave,
   onContinueSave,
+  branding,
+  localization,
 }: {
   draft: ManagedAppConfig;
   databaseVersion: number;
@@ -368,8 +421,30 @@ function ConfigEditor({
   onOpenSave: () => void;
   onCloseSave: () => void;
   onContinueSave: () => void;
+  branding?: BrandingView;
+  localization?: LocalizationView;
 }) {
   const [previewMode, setPreviewMode] = useState<"light" | "dark">("light");
+  const [previewLocale, setPreviewLocale] = useState(
+    localization?.settings.fallbackLanguage ?? "zh-CN",
+  );
+  const previewLanguages = Object.entries(
+    localization?.settings.languages ?? {},
+  )
+    .filter(([, item]) => item.enabled)
+    .sort(([, left], [, right]) => left.sort - right.sort);
+  useEffect(() => {
+    if (!previewLanguages.some(([code]) => code === previewLocale))
+      setPreviewLocale(
+        localization?.settings.fallbackLanguage ??
+          previewLanguages[0]?.[0] ??
+          "zh-CN",
+      );
+  }, [
+    localization?.settings.fallbackLanguage,
+    previewLanguages,
+    previewLocale,
+  ]);
   return (
     <div className="config-editor">
       <Card>
@@ -470,10 +545,36 @@ function ConfigEditor({
               </button>
             ))}
           </div>
+          {previewLanguages.length > 0 ? (
+            <div
+              className="release-note-language-tabs theme-preview-language-tabs"
+              role="tablist"
+              aria-label="预览语言"
+            >
+              {previewLanguages.map(([code, item]) => (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={previewLocale === code}
+                  className={`release-note-language-tab${previewLocale === code ? " is-active" : ""}`}
+                  key={code}
+                  onClick={() => setPreviewLocale(code)}
+                >
+                  {item.nativeName || item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="theme-workbench">
             <ThemePreview
               mode={previewMode}
               palette={draft.theme[previewMode]}
+              messages={draft.localization.messages}
+              featureState={draft.features}
+              updatePolicy={draft.updatePolicy}
+              locale={previewLocale}
+              localization={localization}
+              branding={branding}
             />
             <div className="palette-panel palette-editor-panel">
               <div className="palette-editor-heading">
@@ -687,13 +788,76 @@ function ConfigEditor({
 
 type PreviewPalette = ManagedAppConfig["theme"]["light"];
 
+function brandingLogoUrl(
+  branding: BrandingView | undefined,
+  locale: string,
+  mode: "light" | "dark",
+): string {
+  const config = branding?.config as Record<string, unknown> | undefined;
+  const launch = config?.launch as Record<string, unknown> | undefined;
+  const defaults = launch?.defaultVisual as Record<string, unknown> | undefined;
+  const overrides = launch?.localeOverrides as
+    Record<string, unknown> | undefined;
+  const localeVisual = overrides?.[locale] as
+    Record<string, unknown> | undefined;
+  const localeMode = localeVisual?.[mode] as
+    Record<string, unknown> | undefined;
+  const defaultMode = defaults?.[mode] as Record<string, unknown> | undefined;
+  const asset = (localeMode?.logo ?? defaultMode?.logo) as
+    Record<string, unknown> | undefined;
+  const url = asset?.fileUrl;
+  return typeof url === "string" ? publicApiUrl(url) : "";
+}
+
+function PreviewBrandLogo({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [url]);
+  if (!url || failed) return <span className="app-preview-logo">D</span>;
+  return (
+    <img
+      className="app-preview-logo-image"
+      src={url}
+      alt="AnyFun"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function ThemePreview({
   mode,
   palette,
+  messages,
+  featureState,
+  updatePolicy,
+  locale,
+  localization,
+  branding,
 }: {
   mode: "light" | "dark";
   palette: PreviewPalette;
+  messages: ManagedAppConfig["localization"]["messages"];
+  featureState: ManagedAppConfig["features"];
+  updatePolicy: ManagedAppConfig["updatePolicy"];
+  locale: string;
+  localization?: LocalizationView;
+  branding?: BrandingView;
 }) {
+  const copy = (key: string, fallback: string): string => {
+    const document = localization?.documents.items.find(
+      (candidate) => candidate.key === key.toLowerCase(),
+    );
+    const remote = document?.values[locale]?.content;
+    const fallbackRemote =
+      document?.values[localization?.settings.fallbackLanguage ?? ""]?.content;
+    return (
+      remote ??
+      fallbackRemote ??
+      messages["zh-CN"][key] ??
+      messages["en-US"][key] ??
+      fallback
+    );
+  };
+  const logoUrl = brandingLogoUrl(branding, locale, mode);
   const previewStyle = {
     "--preview-background": palette.background,
     "--preview-surface": palette.surface,
@@ -730,27 +894,39 @@ function ThemePreview({
           data-testid="app-theme-preview"
         >
           <div className="app-preview-topbar">
-            <span className="app-preview-logo">D</span>
-            <span className="app-preview-title">AnyFun</span>
+            <PreviewBrandLogo url={logoUrl} />
+            <span className="app-preview-title">
+              {copy("app.name", "AnyFun")}
+            </span>
             <span className="app-preview-menu">•••</span>
           </div>
           <div className="app-preview-body">
             <span className="app-preview-eyebrow">PORTFOLIO</span>
-            <h4>资产总览</h4>
-            <p className="app-preview-muted">实时查看你的 Web3 资产</p>
+            <h4>{copy("home.title", "资产总览")}</h4>
+            <p className="app-preview-muted">
+              {copy("home.description", "实时查看你的 Web3 资产")}
+            </p>
             <div className="app-preview-balance">
               <span className="app-preview-muted">总资产估值</span>
               <strong>¥ 128,640.00</strong>
               <span className="app-preview-positive">+12.48%</span>
             </div>
             <div className="app-preview-actions">
-              <button type="button">买入</button>
-              <button type="button">转账</button>
+              <button type="button">
+                {copy("home.primaryAction", "买入")}
+              </button>
+              <button type="button">
+                {copy("home.secondaryAction", "转账")}
+              </button>
             </div>
             <div className="app-preview-statuses">
-              <span>已连接</span>
-              <span>主网</span>
-              <span>高风险授权</span>
+              <span>{copy("status.connected", "已连接")}</span>
+              <span>{copy("home.network", "主网")}</span>
+              <span>
+                {featureState.diagnosticsEnabled
+                  ? copy("feature.diagnostics", "诊断")
+                  : ""}
+              </span>
             </div>
             <div className="app-preview-list-item">
               <span className="app-preview-token-icon">E</span>
@@ -766,7 +942,9 @@ function ThemePreview({
             </div>
             <div className="app-preview-alert">
               <span>!</span>
-              <span>交易前请确认网络与收款地址</span>
+              <span>
+                {copy("home.securityDescription", "交易前请确认网络与收款地址")}
+              </span>
             </div>
           </div>
         </div>
@@ -793,6 +971,12 @@ function ThemePreview({
             </div>
           ))}
         </div>
+      </div>
+      <div className="theme-preview-runtime-meta">
+        <span>升级中心：{featureState.updateCenter ? "已启用" : "已关闭"}</span>
+        <span>OTA：{featureState.otaEnabled ? "已启用" : "已关闭"}</span>
+        <span>最低版本：{updatePolicy.minSupportedVersion}</span>
+        <span>最新版本：{updatePolicy.latestVersion}</span>
       </div>
     </div>
   );
