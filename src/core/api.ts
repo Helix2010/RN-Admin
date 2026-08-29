@@ -245,6 +245,34 @@ const configViewSchema = z.object({
     updatedAt: z.string(),
   }),
 });
+
+const brandingUploadSchema = z.object({
+  asset: z.object({
+    id: z.string(),
+    token: z.string(),
+    objectKey: z.string(),
+    fileName: z.string(),
+    contentType: z.string(),
+    size: z.number(),
+  }),
+  upload: z.object({
+    method: z.literal("PUT"),
+    url: z.string(),
+    headers: z.record(z.string(), z.string()),
+    expiresAt: z.string().optional(),
+    requiresCredentials: z.boolean().default(false),
+  }),
+});
+const brandingViewSchema = z.object({
+  config: z.record(z.string(), z.unknown()),
+  metadata: z.object({
+    sourceTenant: z.string(),
+    version: z.number(),
+    updatedBy: z.string(),
+    updatedAt: z.string(),
+  }),
+});
+export type BrandingView = z.infer<typeof brandingViewSchema>;
 export type AppConfig = z.infer<typeof configViewSchema>;
 const configSaveSchema = configViewSchema.extend({
   status: z.literal("active"),
@@ -628,6 +656,39 @@ export const adminApi = {
       }),
     });
   },
+  branding: () => request("/v1/admin/branding", brandingViewSchema),
+  saveBranding: (
+    config: Record<string, unknown>,
+    expectedVersion: number,
+    reason: string,
+  ) =>
+    request("/v1/admin/branding", brandingViewSchema, {
+      method: "PATCH",
+      body: JSON.stringify({
+        config,
+        expectedVersion,
+        reason,
+        confirm: true,
+      }),
+    }),
+  createBrandingAssetUpload: (payload: {
+    fileName: string;
+    contentType: string;
+    size: number;
+    assetType: "launch_logo" | "launch_background";
+    locale?: string;
+    theme?: "light" | "dark";
+  }) =>
+    request("/v1/admin/branding/assets/uploads", brandingUploadSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteBrandingAsset: (token: string) =>
+    request(
+      "/v1/admin/branding/assets/upload",
+      z.object({ deleted: z.literal(true) }),
+      { method: "DELETE", headers: { "x-branding-asset-token": token } },
+    ),
   localization: () => request("/v1/admin/localization", localizationViewSchema),
   saveLocalizationLanguages: (
     settings: Pick<

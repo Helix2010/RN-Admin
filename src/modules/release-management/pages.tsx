@@ -1603,6 +1603,9 @@ export function OtaPage({ tenantId }: AdminPageProps) {
   const otaQuery = useAdminQuery(["ota-releases", tenantId], () =>
     adminApi.otaReleases(tenantId),
   );
+  const localizationQuery = useAdminQuery(["localization", tenantId], () =>
+    adminApi.localization(),
+  );
   const [showCreate, setShowCreate] = React.useState(false);
   const [detailRelease, setDetailRelease] = React.useState<OtaRelease | null>(
     null,
@@ -1668,8 +1671,34 @@ export function OtaPage({ tenantId }: AdminPageProps) {
     return () => window.removeEventListener("popstate", syncFilters);
   }, []);
   const [file, setFile] = React.useState<File | null>(null);
-  const [releaseNotes, setReleaseNotes] =
-    React.useState("修复已知问题并优化体验");
+  const [releaseNotes, setReleaseNotes] = React.useState<
+    Record<string, string>
+  >({ "zh-CN": "修复已知问题并优化体验" });
+  const [activeReleaseNoteLanguage, setActiveReleaseNoteLanguage] =
+    React.useState("zh-CN");
+  const otaNoteLanguages = React.useMemo(
+    () =>
+      Object.entries(localizationQuery.data?.settings.languages ?? {})
+        .filter(([, item]) => item.enabled)
+        .sort(([, left], [, right]) => left.sort - right.sort),
+    [localizationQuery.data?.settings.languages],
+  );
+  const otaDefaultLanguage =
+    localizationQuery.data?.settings.fallbackLanguage ??
+    otaNoteLanguages[0]?.[0] ??
+    "zh-CN";
+  React.useEffect(() => {
+    setReleaseNotes((current) => {
+      const next = { ...current };
+      for (const [code] of otaNoteLanguages)
+        if (!(code in next)) next[code] = "";
+      if (!(next[otaDefaultLanguage] ?? "").trim())
+        next[otaDefaultLanguage] = "修复已知问题并优化体验";
+      return next;
+    });
+    if (!otaNoteLanguages.some(([code]) => code === activeReleaseNoteLanguage))
+      setActiveReleaseNoteLanguage(otaDefaultLanguage);
+  }, [activeReleaseNoteLanguage, otaDefaultLanguage, otaNoteLanguages]);
   const [sourceCommitSha, setSourceCommitSha] = React.useState("");
   const [uploadState, setUploadState] = React.useState<OtaUploadState>("idle");
   const [uploadProgress, setUploadProgress] = React.useState(0);
@@ -1749,7 +1778,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
     mutationFn: () => {
       if (!artifactToken) throw new Error("请先上传 OTA 资源");
       if (!baseReleaseId) throw new Error("请选择基线 APK");
-      if (releaseNotes.trim().length < 3)
+      if ((releaseNotes[otaDefaultLanguage] ?? "").trim().length < 3)
         throw new Error("请填写至少 3 个字符的发布说明");
       setUploadState("saving");
       setUploadStage("正在校验 Manifest 和资源并保存草稿");
@@ -1758,12 +1787,17 @@ export function OtaPage({ tenantId }: AdminPageProps) {
         baseReleaseId,
         channel,
         applyStrategy,
-        releaseNotes: {
-          "zh-CN": releaseNotes
-            .split("\n")
-            .map((item) => item.trim())
-            .filter(Boolean),
-        },
+        releaseNotes: Object.fromEntries(
+          Object.entries(releaseNotes)
+            .map(([language, value]) => [
+              language,
+              value
+                .split("\n")
+                .map((item) => item.trim())
+                .filter(Boolean),
+            ])
+            .filter(([, value]) => (value as string[]).length > 0),
+        ),
         ...(sourceCommitSha.trim()
           ? { sourceCommitSha: sourceCommitSha.trim() }
           : {}),
@@ -2129,7 +2163,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                 saveMutation.isPending ||
                 uploadState !== "uploaded" ||
                 !baseReleaseId ||
-                releaseNotes.trim().length < 3
+                (releaseNotes[otaDefaultLanguage] ?? "").trim().length < 3
               }
               onClick={() => saveMutation.mutate()}
             >
@@ -2298,13 +2332,38 @@ export function OtaPage({ tenantId }: AdminPageProps) {
           )}
           <label className="form-field">
             <span>发布说明</span>
+            <div
+              className="release-note-language-tabs"
+              role="tablist"
+              aria-label="OTA 发布说明语言"
+            >
+              {otaNoteLanguages.map(([code, item]) => (
+                <button
+                  type="button"
+                  key={code}
+                  className={
+                    activeReleaseNoteLanguage === code ? "is-active" : ""
+                  }
+                  onClick={() => setActiveReleaseNoteLanguage(code)}
+                >
+                  {item.nativeName || item.label}
+                  {code === otaDefaultLanguage ? "（默认）" : ""}
+                </button>
+              ))}
+            </div>
             <textarea
               className="input textarea"
-              value={releaseNotes}
-              onChange={(e) => setReleaseNotes(e.target.value)}
+              value={releaseNotes[activeReleaseNoteLanguage] ?? ""}
+              onChange={(e) =>
+                setReleaseNotes((current) => ({
+                  ...current,
+                  [activeReleaseNoteLanguage]: e.target.value,
+                }))
+              }
               placeholder="例如：修复行情刷新问题"
               disabled={saveMutation.isPending}
             />
+            <small>语言来自多语言管理；默认语言必须填写，其他语言可选。</small>
           </label>
           <label className="form-field">
             <span>代码提交 SHA（可选）</span>

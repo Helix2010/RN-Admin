@@ -11,6 +11,7 @@ import {
   Rocket,
   FileClock,
   Languages,
+  Palette,
   Moon,
   Sun,
 } from "lucide-react";
@@ -61,6 +62,7 @@ const iconMap = {
   audit: FileClock,
   cloud: CloudCog,
   languages: Languages,
+  palette: Palette,
 };
 
 export function App() {
