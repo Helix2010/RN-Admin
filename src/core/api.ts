@@ -133,6 +133,29 @@ const installationOverviewSchema = z.object({
     }),
   ),
 });
+const installationListSchema = z.object({
+  items: z.array(
+    z.object({
+      installationId: z.string(),
+      applicationId: z.string(),
+      packageId: z.string(),
+      platform: z.enum(["android", "ios"]),
+      appVersion: z.string(),
+      buildNumber: z.string(),
+      runtimeVersion: z.string(),
+      otaRevision: z.number().nullable(),
+      localizationVersion: z.string().nullable(),
+      brandingVersion: z.number().nullable(),
+      locale: z.string(),
+      theme: z.string(),
+      osVersion: z.string(),
+      deviceClass: z.string(),
+      lastActiveAt: z.string(),
+      status: z.string(),
+    }),
+  ),
+  total: z.number(),
+});
 export type Overview = z.infer<typeof overviewSchema>;
 const paletteSchema = z.object({
   primary: z.string().min(1),
@@ -527,6 +550,26 @@ export const adminApi = {
     return request(
       "/v1/admin/installations/overview",
       installationOverviewSchema,
+    );
+  },
+  installations: (tenantId: string) => {
+    void tenantId;
+    return request("/v1/admin/installations", installationListSchema);
+  },
+  revokeInstallation: (
+    tenantId: string,
+    installationId: string,
+    reason: string,
+  ) => {
+    void tenantId;
+    return request(
+      `/v1/admin/installations/${encodeURIComponent(installationId)}/revoke`,
+      z.object({
+        revoked: z.literal(true),
+        installationId: z.string(),
+        revokedAt: z.string(),
+      }),
+      { method: "POST", body: JSON.stringify({ reason, confirm: true }) },
     );
   },
   releases: (tenantId: string) => {

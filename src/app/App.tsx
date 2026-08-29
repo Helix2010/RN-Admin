@@ -12,6 +12,7 @@ import {
   FileClock,
   Languages,
   Palette,
+  Smartphone,
   Moon,
   Sun,
 } from "lucide-react";
@@ -63,6 +64,7 @@ const iconMap = {
   cloud: CloudCog,
   languages: Languages,
   palette: Palette,
+  smartphone: Smartphone,
 };
 
 export function App() {
