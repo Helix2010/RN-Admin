@@ -13,6 +13,7 @@ import {
   Card,
   EmptyState,
   FeedbackNotice,
+  FileDropzone,
   SidePanel,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -73,6 +74,9 @@ export function BrandingPage({ tenantId }: AdminPageProps) {
   const [mode, setMode] = useState<"light" | "dark">("light");
   const [reason, setReason] = useState("");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<
+    Record<string, File | null>
+  >({});
   const [feedback, setFeedback] = useState<{
     kind: "error" | "success";
     message: string;
@@ -136,6 +140,22 @@ export function BrandingPage({ tenantId }: AdminPageProps) {
       : typeof storedLogoValue === "string"
         ? publicApiUrl(storedLogoValue)
         : "";
+  const documents = localizationQuery.data?.documents.items ?? [];
+  const titleKey = String(
+    readPath(draft ?? {}, ["launch", "messages", "titleKey"]) ?? "launch.title",
+  ).toLowerCase();
+  const subtitleKey = String(
+    readPath(draft ?? {}, ["launch", "messages", "subtitleKey"]) ??
+      "launch.subtitle",
+  ).toLowerCase();
+  const documentValue = (key: string): string => {
+    const item = documents.find((candidate) => candidate.key === key);
+    if (!item) return key;
+    const languageValue = item.values[locale];
+    const fallbackValue =
+      item.values[localizationQuery.data?.settings.fallbackLanguage ?? ""];
+    return languageValue?.content || fallbackValue?.content || key;
+  };
   const previewBackgroundValue = readPath(previewVisual, [
     "backgroundImage",
     "localPreview",
@@ -289,7 +309,9 @@ export function BrandingPage({ tenantId }: AdminPageProps) {
               <button
                 type="button"
                 key={code}
-                className={locale === code ? "is-active" : ""}
+                role="tab"
+                aria-selected={locale === code}
+                className={`release-note-language-tab${locale === code ? " is-active" : ""}`}
                 onClick={() => setLocale(code)}
               >
                 {item.nativeName || item.label}
@@ -307,17 +329,25 @@ export function BrandingPage({ tenantId }: AdminPageProps) {
         </div>
         <div className="form-field">
           <span>主题预览</span>
-          <div className="release-note-language-tabs">
+          <div
+            className="release-note-language-tabs"
+            role="tablist"
+            aria-label="启动页主题"
+          >
             <button
               type="button"
-              className={mode === "light" ? "is-active" : ""}
+              role="tab"
+              aria-selected={mode === "light"}
+              className={`release-note-language-tab${mode === "light" ? " is-active" : ""}`}
               onClick={() => setMode("light")}
             >
               浅色
             </button>
             <button
               type="button"
-              className={mode === "dark" ? "is-active" : ""}
+              role="tab"
+              aria-selected={mode === "dark"}
+              className={`release-note-language-tab${mode === "dark" ? " is-active" : ""}`}
               onClick={() => setMode("dark")}
             >
               深色
@@ -390,27 +420,26 @@ export function BrandingPage({ tenantId }: AdminPageProps) {
           ) : (
             <div className="brand-launch-preview-placeholder">A</div>
           )}
-          <strong>
-            {String(
-              readPath(draft ?? {}, ["launch", "messages", "titleKey"]) ??
-                "launch.title",
-            )}
-          </strong>
+          <strong>{documentValue(titleKey)}</strong>
           <span>
             {locale === "default"
               ? "公共资源预览"
-              : `${locale} · ${mode === "light" ? "浅色" : "深色"}`}
+              : `${locale} · ${mode === "light" ? "浅色" : "深色"} · ${documentValue(subtitleKey)}`}
           </span>
         </div>
         <div className="form-field">
           <span>启动 Logo</span>
-          <input
-            className="input"
-            type="file"
+          <FileDropzone
+            label="启动 Logo"
+            file={selectedFiles[`${locale}:logo`] ?? null}
             accept="image/png,image/jpeg"
             disabled={uploadProgress !== null && uploadProgress < 100}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
+            hint="PNG / JPG，选择后自动上传"
+            onFileChange={(file) => {
+              setSelectedFiles((current) => ({
+                ...current,
+                [`${locale}:logo`]: file,
+              }));
               if (file)
                 void upload(file, "launch_logo").catch((error: unknown) =>
                   setFeedback({
@@ -431,13 +460,17 @@ export function BrandingPage({ tenantId }: AdminPageProps) {
         </div>
         <div className="form-field">
           <span>启动背景图（可选）</span>
-          <input
-            className="input"
-            type="file"
+          <FileDropzone
+            label="启动背景图"
+            file={selectedFiles[`${locale}:background`] ?? null}
             accept="image/png,image/jpeg"
             disabled={uploadProgress !== null && uploadProgress < 100}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
+            hint="可选，PNG / JPG，选择后自动上传"
+            onFileChange={(file) => {
+              setSelectedFiles((current) => ({
+                ...current,
+                [`${locale}:background`]: file,
+              }));
               if (file)
                 void upload(file, "launch_background").catch((error: unknown) =>
                   setFeedback({
