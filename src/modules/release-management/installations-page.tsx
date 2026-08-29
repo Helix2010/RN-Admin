@@ -45,7 +45,7 @@ export function InstallationsPage({ tenantId }: AdminPageProps) {
     );
   const items = query.data?.items ?? [];
   return (
-    <>
+    <div className="installations-page">
       <FeedbackNotice
         kind={feedback ? "success" : "success"}
         message={feedback}
@@ -167,6 +167,6 @@ export function InstallationsPage({ tenantId }: AdminPageProps) {
           <small>至少填写 3 个字符。</small>
         </label>
       </SidePanel>
-    </>
+    </div>
   );
 }

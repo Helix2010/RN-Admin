@@ -231,7 +231,7 @@ export function BrandingPage({ tenantId }: AdminPageProps) {
   };
 
   return (
-    <>
+    <div className="branding-page">
       <FeedbackNotice
         kind={feedback?.kind ?? "success"}
         message={feedback?.message ?? ""}
@@ -496,6 +496,6 @@ export function BrandingPage({ tenantId }: AdminPageProps) {
           <small>至少 3 个字符。</small>
         </label>
       </SidePanel>
-    </>
+    </div>
   );
 }

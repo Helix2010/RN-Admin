@@ -886,6 +886,10 @@ p {
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
 }
+.metric-grid-compact {
+  grid-template-columns: repeat(2, minmax(220px, 360px));
+  gap: 18px;
+}
 .metric {
   padding: 20px;
 }
@@ -983,6 +987,31 @@ p {
 }
 .table-wrap {
   overflow: hidden;
+}
+.push-events-page > .card,
+.installations-page > .card,
+.branding-page > .card {
+  margin-top: 20px;
+}
+.push-events-page > .page-heading,
+.installations-page > .page-heading,
+.branding-page > .page-heading {
+  margin-bottom: 20px;
+}
+.push-events-page .card-header,
+.installations-page .card-header,
+.branding-page .card-header {
+  padding: 16px 22px;
+}
+.push-events-page th,
+.installations-page th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.push-events-page td,
+.installations-page td {
+  padding-top: 13px;
+  padding-bottom: 13px;
 }
 table {
   width: 100%;

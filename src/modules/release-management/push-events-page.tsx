@@ -28,7 +28,7 @@ export function PushEventsPage({ tenantId }: AdminPageProps) {
     deliveries.data?.items.filter((item) => item.status === "failed").length ??
     0;
   return (
-    <>
+    <div className="push-events-page">
       <div className="page-heading">
         <div>
           <div className="eyebrow">Push operations</div>
@@ -46,7 +46,7 @@ export function PushEventsPage({ tenantId }: AdminPageProps) {
           刷新
         </Button>
       </div>
-      <div className="metric-grid">
+      <div className="metric-grid metric-grid-compact">
         <Card className="metric">
           <div className="metric-label">事件数</div>
           <div className="metric-value">{outbox.data?.total ?? 0}</div>
@@ -178,6 +178,6 @@ export function PushEventsPage({ tenantId }: AdminPageProps) {
           </table>
         </div>
       </Card>
-    </>
+    </div>
   );
 }
