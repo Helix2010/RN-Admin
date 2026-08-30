@@ -140,6 +140,26 @@ function renderPage() {
 }
 
 describe("AppConfigPage theme workbench", () => {
+  it("previews the bottom navigation for each module combination", async () => {
+    apiMocks.config.mockResolvedValue(configView());
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "编辑配置" }));
+    expect(screen.getByLabelText("当前底栏预览").textContent).toContain(
+      "首页预测DEX资产",
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: /预测市场/ }));
+    expect(screen.getByLabelText("当前底栏预览").textContent).toContain(
+      "首页行情兑换资产",
+    );
+    expect(
+      (screen.getByRole("checkbox", { name: /DEX 兑换/ }) as HTMLInputElement)
+        .disabled,
+    ).toBe(true);
+  });
+
   it("previews palette edits and uses the progressive save workflow", async () => {
     apiMocks.config.mockResolvedValue(configView());
     const user = userEvent.setup();

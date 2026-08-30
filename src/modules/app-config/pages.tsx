@@ -101,6 +101,12 @@ const moduleLabels: Record<keyof ManagedAppConfig["modules"], string> = {
   dex: "DEX 兑换",
 };
 
+function moduleNavigationItems(modules: ManagedAppConfig["modules"]): string[] {
+  if (modules.predict && modules.dex) return ["首页", "预测", "DEX", "资产"];
+  if (modules.predict) return ["首页", "预测", "持仓", "资产"];
+  return ["首页", "行情", "兑换", "资产"];
+}
+
 export function AppConfigPage({ tenantId }: AdminPageProps) {
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -670,6 +676,10 @@ function ConfigEditor({
                 <input
                   type="checkbox"
                   checked={draft.modules[key]}
+                  disabled={
+                    draft.modules[key] &&
+                    !draft.modules[key === "predict" ? "dex" : "predict"]
+                  }
                   onChange={(event) =>
                     onChange((next) => {
                       next.modules[key] = event.target.checked;
@@ -678,6 +688,17 @@ function ConfigEditor({
                 />
               </label>
             ))}
+            <div
+              className="module-navigation-preview"
+              aria-label="当前底栏预览"
+            >
+              <small>当前底栏</small>
+              <div>
+                {moduleNavigationItems(draft.modules).map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            </div>
           </div>
         </Card>
 

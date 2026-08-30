@@ -2237,6 +2237,36 @@ tr:hover td {
   height: 20px;
   accent-color: var(--brand);
 }
+.module-navigation-preview {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.module-navigation-preview > small {
+  color: var(--muted);
+  font-weight: 700;
+}
+.module-navigation-preview > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.module-navigation-preview span {
+  padding: 8px 4px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel-2);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.module-navigation-preview span:nth-child(2) {
+  color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
 .compact-switch {
   min-height: 38px;
   padding: 7px 10px;
