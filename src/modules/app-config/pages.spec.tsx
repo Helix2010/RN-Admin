@@ -198,4 +198,30 @@ describe("AppConfigPage theme workbench", () => {
       await screen.findByRole("dialog", { name: "激活应用配置？" }),
     ).toBeTruthy();
   });
+
+  it("applies the trading product palette as a draft preset", async () => {
+    apiMocks.config.mockResolvedValue(configView());
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "编辑配置" }));
+    await user.click(
+      screen.getByRole("button", { name: "应用交易产品配色预设" }),
+    );
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "浅色主品牌色",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("#F0B90B");
+    await user.click(screen.getByRole("tab", { name: "深色主题" }));
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "深色页面背景",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("#0B0E11");
+  });
 });

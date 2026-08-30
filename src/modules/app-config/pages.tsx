@@ -89,6 +89,50 @@ const paletteUsage: Record<(typeof paletteKeys)[number], string> = {
   backdrop: "弹层后方的页面遮罩",
 };
 
+const tradingThemePreset: ManagedAppConfig["theme"] = {
+  defaultMode: "system",
+  allowUserOverride: true,
+  paletteVersion: "trading-1",
+  light: {
+    primary: "#F0B90B",
+    onPrimary: "#181A20",
+    background: "#F5F5F5",
+    surface: "#FFFFFF",
+    surfaceVariant: "#F0F1F2",
+    text: "#1E2329",
+    textMuted: "#707A8A",
+    border: "#EAECEF",
+    success: "#0ECB81",
+    warning: "#D0980B",
+    danger: "#F6465D",
+    info: "#3861FB",
+    pricePositive: "#0ECB81",
+    priceNegative: "#F6465D",
+    risk: "#D0980B",
+    focus: "#FCD535",
+    backdrop: "rgba(24,26,32,0.56)",
+  },
+  dark: {
+    primary: "#F0B90B",
+    onPrimary: "#181A20",
+    background: "#0B0E11",
+    surface: "#181A20",
+    surfaceVariant: "#23262D",
+    text: "#EAECEF",
+    textMuted: "#848E9C",
+    border: "#2B3139",
+    success: "#0ECB81",
+    warning: "#F0B90B",
+    danger: "#F6465D",
+    info: "#4A7DFF",
+    pricePositive: "#0ECB81",
+    priceNegative: "#F6465D",
+    risk: "#F0B90B",
+    focus: "#FCD535",
+    backdrop: "rgba(0,0,0,0.72)",
+  },
+};
+
 const featureLabels: Record<keyof ManagedAppConfig["features"], string> = {
   updateCenter: "升级中心",
   otaEnabled: "OTA 热更新",
@@ -663,6 +707,22 @@ function ConfigEditor({
                 控制 App 首页、底栏、资产账户和设置项，至少开启一个模块
               </p>
             </div>
+          </div>
+          <div className="preset-toolbar">
+            <button
+              className="button button-ghost"
+              type="button"
+              onClick={() =>
+                onChange((next) => {
+                  next.theme = structuredClone(tradingThemePreset);
+                })
+              }
+            >
+              应用交易产品配色预设
+            </button>
+            <span className="section-caption">
+              应用后保存配置，App 将通过 Bootstrap 使用 Light / Dark 主题色。
+            </span>
           </div>
           <div className="card-body switch-list">
             {(
