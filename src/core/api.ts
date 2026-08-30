@@ -228,6 +228,12 @@ export const managedAppConfigSchema = z.object({
     light: paletteSchema,
     dark: paletteSchema,
   }),
+  modules: z
+    .object({
+      predict: z.boolean(),
+      dex: z.boolean(),
+    })
+    .default({ predict: true, dex: true }),
   features: z.object({
     updateCenter: z.boolean(),
     otaEnabled: z.boolean(),

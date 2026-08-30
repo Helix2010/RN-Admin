@@ -83,6 +83,7 @@ function managedConfig(): ManagedAppConfig {
       light,
       dark,
     },
+    modules: { predict: true, dex: true },
     features: {
       updateCenter: true,
       otaEnabled: true,

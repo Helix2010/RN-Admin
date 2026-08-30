@@ -96,6 +96,11 @@ const featureLabels: Record<keyof ManagedAppConfig["features"], string> = {
   diagnosticsEnabled: "诊断信息",
 };
 
+const moduleLabels: Record<keyof ManagedAppConfig["modules"], string> = {
+  predict: "预测市场",
+  dex: "DEX 兑换",
+};
+
 export function AppConfigPage({ tenantId }: AdminPageProps) {
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -345,6 +350,19 @@ function ConfigSummary({
               {data.config.theme.allowUserOverride
                 ? "允许用户切换"
                 : "锁定系统主题"}
+            </span>
+          </div>
+          <div className="config-item">
+            <Database size={18} />
+            <strong>业务模块</strong>
+            <span>
+              {Object.entries(data.config.modules)
+                .filter(([, enabled]) => enabled)
+                .map(
+                  ([key]) =>
+                    moduleLabels[key as keyof ManagedAppConfig["modules"]],
+                )
+                .join(" · ")}
             </span>
           </div>
           <div className="config-item">
@@ -631,6 +649,38 @@ function ConfigEditor({
       </Card>
 
       <div className="config-two-column">
+        <Card>
+          <div className="card-header">
+            <div>
+              <h2>业务模块</h2>
+              <p className="section-caption">
+                控制 App 首页、底栏、资产账户和设置项，至少开启一个模块
+              </p>
+            </div>
+          </div>
+          <div className="card-body switch-list">
+            {(
+              Object.keys(moduleLabels) as (keyof ManagedAppConfig["modules"])[]
+            ).map((key) => (
+              <label className="switch-row" key={key}>
+                <span>
+                  <strong>{moduleLabels[key]}</strong>
+                  <small className="mono">modules.{key}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={draft.modules[key]}
+                  onChange={(event) =>
+                    onChange((next) => {
+                      next.modules[key] = event.target.checked;
+                    })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+        </Card>
+
         <Card>
           <div className="card-header">
             <div>
@@ -1009,6 +1059,9 @@ function validateConfig(config: ManagedAppConfig): string | null {
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return `请检查 ${issue.path.join(".") || "配置"}：${issue.message}`;
+  }
+  if (!config.modules.predict && !config.modules.dex) {
+    return "预测市场和 DEX 兑换至少需要开启一个。";
   }
   for (const mode of ["light", "dark"] as const) {
     for (const key of paletteKeys) {
