@@ -50,6 +50,7 @@ const catalog = [
     chainId: 56,
     defaultRpcUrls: ["https://bsc-dataseed.bnbchain.org"],
     defaultExplorerUrl: "https://bscscan.com",
+    testnet: false,
   },
   {
     id: "base",
@@ -57,6 +58,15 @@ const catalog = [
     chainId: 8453,
     defaultRpcUrls: ["https://mainnet.base.org"],
     defaultExplorerUrl: "https://basescan.org",
+    testnet: false,
+  },
+  {
+    id: "op-sepolia",
+    name: "OP Sepolia",
+    chainId: 11155420,
+    defaultRpcUrls: ["https://sepolia.optimism.io"],
+    defaultExplorerUrl: "https://sepolia-optimism.etherscan.io",
+    testnet: true,
   },
 ];
 
@@ -225,6 +235,47 @@ describe("WalletChainsPage", () => {
     ).toEqual([]);
     expect(expectedVersion).toBe(7);
     expect(reason).toBe("启用 Base 并接自有节点");
+  });
+
+  it("warns before a test chain goes out to a tenant", async () => {
+    // 测试网的币没有价值。它和主网并排出现时，运营很容易顺手勾上
+    apiMocks.config.mockResolvedValue(configView());
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "编辑配置" }));
+    expect(screen.getAllByText("测试网").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/这是测试网/)).toBeNull();
+
+    await user.click(screen.getByRole("checkbox", { name: /OP Sepolia/ }));
+
+    expect(screen.getByText(/上面的代币没有真实价值/)).toBeTruthy();
+  });
+
+  it("sends the test chain with the platform chainId when enabled", async () => {
+    apiMocks.config.mockResolvedValue(configView());
+    apiMocks.saveConfig.mockResolvedValue(configView());
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "编辑配置" }));
+    await user.click(screen.getByRole("checkbox", { name: /OP Sepolia/ }));
+    await user.click(screen.getByRole("button", { name: "保存配置" }));
+    await user.type(
+      screen.getByPlaceholderText("例如：接入租户自有 BSC 节点并启用 Base"),
+      "开启 OP Sepolia 供内部测试",
+    );
+    await user.click(screen.getByRole("button", { name: "继续确认" }));
+    await user.click(await screen.findByRole("button", { name: "确认激活" }));
+
+    const [, sent] = apiMocks.saveConfig.mock.calls[0] as [
+      string,
+      ManagedAppConfig,
+    ];
+    expect(sent.wallet.chains).toEqual(["bsc", "op-sepolia"]);
+    expect(
+      sent.wallet.networks.find((item) => item.id === "op-sepolia")?.chainId,
+    ).toBe(11155420);
   });
 
   it("keeps at least one chain enabled and restores platform defaults", async () => {

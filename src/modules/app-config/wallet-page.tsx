@@ -42,6 +42,8 @@ function catalogFrom(view: AppConfig): WalletCatalogEntry[] {
     chainId: network.chainId,
     defaultRpcUrls: [],
     defaultExplorerUrl: "",
+    // 老服务端没有目录，无从判断是不是测试网，按主网处理最保守
+    testnet: false,
   }));
 }
 
@@ -608,7 +610,17 @@ function WalletEditor({
               >
                 <label className="switch-row wallet-chain-switch-row">
                   <span>
-                    <strong className="wallet-chain-title">{chain.name}</strong>
+                    <strong className="wallet-chain-title">
+                      {chain.name}
+                      {chain.testnet ? (
+                        <span
+                          className="strategy-pill"
+                          title="测试网：链上代币没有真实价值"
+                        >
+                          测试网
+                        </span>
+                      ) : null}
+                    </strong>
                     <small className="mono wallet-chain-meta">
                       chainId {chain.chainId} · {chain.id}
                     </small>
@@ -628,6 +640,14 @@ function WalletEditor({
                     }
                   />
                 </label>
+                {on && chain.testnet ? (
+                  <div className="draft-help-banner" role="alert">
+                    <strong>这是测试网。</strong>
+                    上面的代币没有真实价值，只应开给内部测试或体验环境的租户。
+                    生产租户启用后，用户会在 App
+                    里看到一条和主网并列的链，很容易误以为 资产是真的。
+                  </div>
+                ) : null}
                 {on ? (
                   <div className="config-inline-fields">
                     <label className="form-field">

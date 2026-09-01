@@ -140,6 +140,7 @@ function configView(): AppConfig {
           chainId: 56,
           defaultRpcUrls: ["https://bsc-dataseed.bnbchain.org"],
           defaultExplorerUrl: "https://bscscan.com",
+          testnet: false,
         },
       ],
     },
