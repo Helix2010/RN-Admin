@@ -233,6 +233,8 @@ const walletCatalogEntrySchema = z.object({
   chainId: z.number().int(),
   defaultRpcUrls: z.array(z.string()).default([]),
   defaultExplorerUrl: z.string().default(""),
+  // 老服务端不下发这个标记时按主网处理
+  testnet: z.boolean().default(false),
 });
 
 export const managedAppConfigSchema = z.object({
