@@ -409,6 +409,28 @@ describe("ReleasesPage actions", () => {
     expect(apiMocks.action).not.toHaveBeenCalled();
   });
 
+  it("forgets a ticked force-update switch when the form is reopened", async () => {
+    // 回归：勾了强制但没发成功、关掉表单再打开，残留的勾选会让下一次发布
+    // 意外变成强制——checkbox 比输入框更容易被忽略
+    apiMocks.releases.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "上传 APK" }));
+    await user.click(screen.getByRole("checkbox", { name: /强制升级/ }));
+    await user.click(screen.getByRole("button", { name: "取消" }));
+
+    await user.click(await screen.findByRole("button", { name: "上传 APK" }));
+    expect(
+      (screen.getByRole("checkbox", { name: /强制升级/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+  });
+
   it("sends the mandatory flag and warns before doing it", async () => {
     apiMocks.releases.mockResolvedValue({
       items: [],
