@@ -8,8 +8,14 @@ import {
   EmptyState,
   FeedbackNotice,
   SidePanel,
+  StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
+
+function compactIdentifier(value: string): string {
+  if (value.length <= 26) return value;
+  return `${value.slice(0, 15)}…${value.slice(-8)}`;
+}
 
 export function InstallationsPage({ tenantId }: AdminPageProps) {
   const queryClient = useQueryClient();
@@ -76,7 +82,7 @@ export function InstallationsPage({ tenantId }: AdminPageProps) {
           </div>
         </div>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table installations-table">
             <thead>
               <tr>
                 <th>安装实例</th>
@@ -91,29 +97,40 @@ export function InstallationsPage({ tenantId }: AdminPageProps) {
             <tbody>
               {items.map((item) => (
                 <tr key={item.installationId}>
-                  <td>
-                    <strong className="mono">{item.installationId}</strong>
-                    <small>{item.packageId}</small>
+                  <td className="installation-identity-cell">
+                    <strong
+                      className="mono identifier-value"
+                      title={item.installationId}
+                    >
+                      {compactIdentifier(item.installationId)}
+                    </strong>
+                    <small className="secondary-value">{item.packageId}</small>
                   </td>
-                  <td>
-                    {item.platform}
-                    <small>
+                  <td className="installation-version-cell">
+                    <strong>{item.platform}</strong>
+                    <small className="secondary-value">
                       {item.appVersion} · build {item.buildNumber}
                     </small>
                   </td>
-                  <td>
-                    <small>{item.runtimeVersion}</small>
-                    <small>OTA {item.otaRevision ?? "-"}</small>
+                  <td className="installation-runtime-cell">
+                    <strong>{item.runtimeVersion}</strong>
+                    <small className="secondary-value">
+                      OTA {item.otaRevision ?? "-"}
+                    </small>
+                  </td>
+                  <td className="installation-preference-cell">
+                    <strong>{item.locale}</strong>
+                    <small className="secondary-value">{item.theme}</small>
+                  </td>
+                  <td className="installation-activity-cell">
+                    <strong>
+                      {new Date(item.lastActiveAt).toLocaleString("zh-CN")}
+                    </strong>
+                    <small className="secondary-value">{item.osVersion}</small>
                   </td>
                   <td>
-                    {item.locale}
-                    <small>{item.theme}</small>
+                    <StatusPill status={item.status} />
                   </td>
-                  <td>
-                    {new Date(item.lastActiveAt).toLocaleString("zh-CN")}
-                    <small>{item.osVersion}</small>
-                  </td>
-                  <td>{item.status}</td>
                   <td>
                     <button
                       className="icon-button danger-icon"
