@@ -209,6 +209,30 @@ const paletteSchema = z.object({
   backdrop: z.string().min(1),
 });
 
+const walletSectionSchema = z.object({
+  walletConnectProjectId: z.string().default(""),
+  chains: z.array(z.string()).default([]),
+  networks: z
+    .array(
+      z.object({
+        id: z.string(),
+        chainId: z.number().int(),
+        rpcUrls: z.array(z.string()).default([]),
+        explorerUrl: z.string().default(""),
+      }),
+    )
+    .default([]),
+});
+
+/** 平台支持的链目录，由服务端下发；管理端不再自己抄一份链表。 */
+const walletCatalogEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  chainId: z.number().int(),
+  defaultRpcUrls: z.array(z.string()).default([]),
+  defaultExplorerUrl: z.string().default(""),
+});
+
 export const managedAppConfigSchema = z.object({
   configVersion: z.string().trim().min(1),
   ttlSeconds: z.number().int().min(30).max(86400),
@@ -246,8 +270,23 @@ export const managedAppConfigSchema = z.object({
     otaChannel: z.string().trim().min(1),
   }),
   support: z.object({ statusPageUrl: z.url() }),
+  /**
+   * 钱包与链参数：App 启动时随 bootstrap 下发，改完不需要重新打包。
+   *
+   * 这一段必须留在 schema 里。配置中心是"整份配置 PATCH 回去"，schema 没声明
+   * 的字段会被 zod 剥掉——漏掉它就意味着改一次主题色会把租户的 projectId
+   * 和链端点一起清空。
+   */
+  wallet: walletSectionSchema.default({
+    walletConnectProjectId: "",
+    chains: [],
+    networks: [],
+  }),
 });
 export type ManagedAppConfig = z.infer<typeof managedAppConfigSchema>;
+export type WalletSection = z.infer<typeof walletSectionSchema>;
+export type WalletNetworkSection = WalletSection["networks"][number];
+export type WalletCatalogEntry = z.infer<typeof walletCatalogEntrySchema>;
 
 const languageResourceSchema = z.object({
   version: z.string(),
@@ -313,6 +352,12 @@ const configSummarySchema = z.object({
   theme: z.object({ paletteVersion: z.string(), modes: z.array(z.string()) }),
   featureFlags: z.array(z.string()),
   updatePolicy: z.object({ source: z.string(), approvalRequired: z.boolean() }),
+  wallet: z
+    .object({
+      chains: z.array(z.string()).default([]),
+      walletConnectConfigured: z.boolean().default(false),
+    })
+    .default({ chains: [], walletConnectConfigured: false }),
 });
 const configViewSchema = z.object({
   summary: configSummarySchema,
@@ -321,6 +366,7 @@ const configViewSchema = z.object({
     databaseVersion: z.number().int().positive(),
     updatedBy: z.string(),
     updatedAt: z.string(),
+    walletCatalog: z.array(walletCatalogEntrySchema).default([]),
   }),
 });
 

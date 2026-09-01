@@ -985,11 +985,13 @@ p {
   font-size: 11px;
   text-transform: capitalize;
 }
-.status-active {
+.status-active,
+.status-configured {
   color: #11734f;
   background: #dcf5e9;
 }
-.status-paused {
+.status-paused,
+.status-required {
   color: #925900;
   background: #fff0d1;
 }
@@ -2492,11 +2494,13 @@ tr:hover td {
   color: #b8c9e5;
   background: #23334a;
 }
-[data-theme="dark"] .status-active {
+[data-theme="dark"] .status-active,
+[data-theme="dark"] .status-configured {
   color: #8bf0c5;
   background: rgba(40, 137, 102, 0.22);
 }
-[data-theme="dark"] .status-paused {
+[data-theme="dark"] .status-paused,
+[data-theme="dark"] .status-required {
   color: #ffd98d;
   background: rgba(193, 132, 35, 0.2);
 }

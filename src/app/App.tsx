@@ -16,6 +16,7 @@ import {
   Smartphone,
   Moon,
   Sun,
+  Wallet,
 } from "lucide-react";
 import {
   registerAdminPlugin,
@@ -67,6 +68,7 @@ const iconMap = {
   palette: Palette,
   smartphone: Smartphone,
   bell: Bell,
+  wallet: Wallet,
 };
 
 export function App() {

@@ -96,6 +96,18 @@ function managedConfig(): ManagedAppConfig {
       otaChannel: "production",
     },
     support: { statusPageUrl: "https://status.anyfun.win" },
+    wallet: {
+      walletConnectProjectId: "3f8a2c1d9e4b6a70f2c5d8e1b4a70932",
+      chains: ["bsc"],
+      networks: [
+        {
+          id: "bsc",
+          chainId: 56,
+          rpcUrls: ["https://bsc-dataseed.bnbchain.org"],
+          explorerUrl: "https://bscscan.com",
+        },
+      ],
+    },
   };
 }
 
@@ -114,12 +126,22 @@ function configView(): AppConfig {
       },
       featureFlags: [],
       updatePolicy: { source: "mysql", approvalRequired: false },
+      wallet: { chains: ["bsc"], walletConnectConfigured: true },
     },
     config,
     metadata: {
       databaseVersion: 3,
       updatedBy: "admin",
       updatedAt: "2026-08-27T00:00:00Z",
+      walletCatalog: [
+        {
+          id: "bsc",
+          name: "BNB Smart Chain",
+          chainId: 56,
+          defaultRpcUrls: ["https://bsc-dataseed.bnbchain.org"],
+          defaultExplorerUrl: "https://bscscan.com",
+        },
+      ],
     },
   };
 }
@@ -223,5 +245,39 @@ describe("AppConfigPage theme workbench", () => {
         }) as HTMLInputElement
       ).value,
     ).toBe("#0B0E11");
+  });
+});
+
+describe("AppConfigPage wallet section", () => {
+  it("keeps the wallet section when saving an unrelated change", async () => {
+    // 回归：schema 里漏掉 wallet 时，配置中心保存会把租户的 projectId
+    // 和链端点一起清空——改一次主题色就让外部钱包连不上
+    apiMocks.config.mockResolvedValue(configView());
+    apiMocks.saveConfig.mockResolvedValue(configView());
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "编辑配置" }));
+    const ttl = screen.getByRole("spinbutton", { name: /缓存 TTL/ });
+    await user.clear(ttl);
+    await user.type(ttl, "600");
+    await user.click(screen.getByRole("button", { name: "保存配置" }));
+    await user.type(
+      screen.getByPlaceholderText("例如：调整生产环境主题并更新 OTA 渠道"),
+      "调整缓存 TTL",
+    );
+    await user.click(screen.getByRole("button", { name: "继续确认" }));
+    await user.click(await screen.findByRole("button", { name: "确认激活" }));
+
+    const [, sent] = apiMocks.saveConfig.mock.calls[0] as [
+      string,
+      ManagedAppConfig,
+    ];
+    expect(sent.wallet.walletConnectProjectId).toBe(
+      "3f8a2c1d9e4b6a70f2c5d8e1b4a70932",
+    );
+    expect(sent.wallet.networks[0].rpcUrls).toEqual([
+      "https://bsc-dataseed.bnbchain.org",
+    ]);
   });
 });
