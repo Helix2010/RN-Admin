@@ -213,6 +213,8 @@ const paletteSchema = z.object({
 
 const walletSectionSchema = z.looseObject({
   walletConnectProjectId: z.string().default(""),
+  // 转出是否真的上链（花真钱）。老服务端不下发时按关处理
+  onchainSends: z.boolean().default(false),
   chains: z.array(z.string()).default([]),
   networks: z
     .array(
@@ -283,6 +285,7 @@ export const managedAppConfigSchema = z.looseObject({
    */
   wallet: walletSectionSchema.default({
     walletConnectProjectId: "",
+    onchainSends: false,
     chains: [],
     networks: [],
   }),

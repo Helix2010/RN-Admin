@@ -51,6 +51,7 @@ function draftFrom(view: AppConfig, catalog: WalletCatalogEntry[]) {
   const wallet = view.config.wallet;
   return {
     walletConnectProjectId: wallet.walletConnectProjectId,
+    onchainSends: wallet.onchainSends,
     enabled: new Set(
       wallet.chains.length > 0
         ? wallet.chains
@@ -139,6 +140,7 @@ function walletSectionFrom(
     .map((chain) => chain.id);
   return {
     walletConnectProjectId: draft.walletConnectProjectId.trim(),
+    onchainSends: draft.onchainSends,
     chains,
     networks: catalog
       .filter((chain) => draft.enabled.has(chain.id))
@@ -252,6 +254,7 @@ export function WalletChainsPage({ tenantId }: AdminPageProps) {
       if (!current) return current;
       const next: WalletDraft = {
         walletConnectProjectId: current.walletConnectProjectId,
+        onchainSends: current.onchainSends,
         enabled: new Set(current.enabled),
         endpoints: Object.fromEntries(
           Object.entries(current.endpoints).map(([id, value]) => [
@@ -396,6 +399,7 @@ function WalletOverview({
 }) {
   const wallet = data.config.wallet;
   const projectId = wallet.walletConnectProjectId.trim();
+  const onchainSends = wallet.onchainSends;
   const enabled = catalog.filter(
     (chain) =>
       wallet.chains.includes(chain.id) ||
@@ -416,6 +420,14 @@ function WalletOverview({
         </div>
         <div className="card-body">
           <div className="metric-grid wallet-project-metrics">
+            <div className="metric">
+              <div className="metric-label">链上转出（真实资金）</div>
+              <div className="metric-value" data-testid="wallet-onchain-sends">
+                {onchainSends
+                  ? "开启 · 转出会真的上链"
+                  : "关闭 · 转出只记演示账本"}
+              </div>
+            </div>
             <div className="metric">
               <div className="metric-label">Project ID</div>
               <div
@@ -554,6 +566,28 @@ function WalletEditor({
           </div>
         </div>
         <div className="card-body form-stack">
+          <label className="wallet-chain-row">
+            <span>
+              <strong>链上转出（真实资金）</strong>
+              <small className="wallet-chain-meta">
+                开启后，App 里的转出会真的签名并广播到链上、扣真钱。
+                关闭时转出只记在演示账本，不会上链。
+                {draft.onchainSends
+                  ? "当前：开启。请确认代币目录与链上余额已就绪，否则用户会看到演示余额与真实转出对不上。"
+                  : "当前：关闭。"}
+              </small>
+            </span>
+            <input
+              type="checkbox"
+              checked={draft.onchainSends}
+              aria-label="链上转出（真实资金）"
+              onChange={(event) =>
+                onChange((next) => {
+                  next.onchainSends = event.target.checked;
+                })
+              }
+            />
+          </label>
           <label className="form-field">
             <span>Project ID</span>
             <input

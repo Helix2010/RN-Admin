@@ -73,6 +73,7 @@ const catalog = [
 function configView(wallet?: Partial<ManagedAppConfig["wallet"]>): AppConfig {
   const walletSection: ManagedAppConfig["wallet"] = {
     walletConnectProjectId: "3f8a2c1d9e4b6a70f2c5d8e1b4a70932",
+    onchainSends: false,
     chains: ["bsc"],
     networks: [
       {
@@ -314,5 +315,36 @@ describe("WalletChainsPage", () => {
     );
     expect(rpc.value).toBe("");
     expect(rpc.placeholder).toBe("https://bsc-dataseed.bnbchain.org");
+  });
+});
+
+describe("wallet page on-chain switch", () => {
+  it("is off by default and is sent explicitly when the operator turns it on", async () => {
+    // "有 RPC 端点"不能当开关：没配过端点的租户也会拿到平台默认端点
+    apiMocks.config.mockResolvedValue(configView());
+    apiMocks.saveConfig.mockResolvedValue(configView());
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(
+      (await screen.findByTestId("wallet-onchain-sends")).textContent,
+    ).toContain("关闭");
+    await user.click(screen.getByRole("button", { name: "编辑配置" }));
+    await user.click(
+      screen.getByRole("checkbox", { name: "链上转出（真实资金）" }),
+    );
+    await user.click(screen.getByRole("button", { name: "保存配置" }));
+    await user.type(
+      screen.getByPlaceholderText("例如：接入租户自有 BSC 节点并启用 Base"),
+      "开启链上转出",
+    );
+    await user.click(screen.getByRole("button", { name: "继续确认" }));
+    await user.click(await screen.findByRole("button", { name: "确认激活" }));
+
+    const [, sent] = apiMocks.saveConfig.mock.calls[0] as [
+      string,
+      { wallet: { onchainSends: boolean } },
+    ];
+    expect(sent.wallet.onchainSends).toBe(true);
   });
 });

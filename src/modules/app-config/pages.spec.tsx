@@ -98,6 +98,7 @@ function managedConfig(): ManagedAppConfig {
     support: { statusPageUrl: "https://status.anyfun.win" },
     wallet: {
       walletConnectProjectId: "3f8a2c1d9e4b6a70f2c5d8e1b4a70932",
+      onchainSends: false,
       chains: ["bsc"],
       networks: [
         {
