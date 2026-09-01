@@ -20,6 +20,8 @@ const releaseSchema = z.object({
     .nullish()
     .transform((value) => value ?? undefined),
   rejectionReason: z.string().nullable().optional(),
+  // 老服务端不返回这个字段，默认按"非强制"处理
+  mandatory: z.boolean().default(false),
   verifiedAt: z.string().nullable().optional(),
   publishedAt: z.string().nullable().optional(),
   createdAt: z.string(),

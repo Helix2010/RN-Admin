@@ -275,6 +275,14 @@ export function DashboardPage({ onNavigate, tenantId }: AdminPageProps) {
                   {release ? (
                     <div style={{ minWidth: 150 }}>
                       <StatusPill status={release.status} />
+                      {release.mandatory ? (
+                        <span
+                          className="strategy-pill"
+                          title="低于此版本的用户不能跳过升级"
+                        >
+                          强制升级
+                        </span>
+                      ) : null}
                       <div className="progress" style={{ marginTop: 8 }}>
                         <span style={{ width: "100%" }} />
                       </div>
@@ -331,6 +339,7 @@ export function ReleasesPage({
   const [platform, setPlatform] = React.useState("android");
   const [version, setVersion] = React.useState("");
   const [buildNumber, setBuildNumber] = React.useState("");
+  const [mandatory, setMandatory] = React.useState(false);
   const [releaseNotes, setReleaseNotes] = React.useState<
     Record<string, string>
   >({
@@ -641,6 +650,7 @@ export function ReleasesPage({
         version: version.trim(),
         buildNumber: Number(buildNumber),
         releaseNotes: normalizedReleaseNotes,
+        mandatory,
       });
       return result.release;
     },
@@ -648,6 +658,7 @@ export function ReleasesPage({
       setUploadState("success");
       setShowCreate(false);
       setFile(null);
+      setMandatory(false);
       setArtifactToken("");
       uploadSessionRef.current = null;
       uploadedPartsRef.current.clear();
@@ -1042,6 +1053,31 @@ export function ReleasesPage({
             </label>
           </div>
           <div className="form-field">
+            <label className="switch-row">
+              <span>
+                <strong>强制升级</strong>
+                <small>
+                  这个版本上线后，低于它的用户只能升级——App 里不会有“稍后再说”，
+                  返回键和点击遮罩都关不掉弹窗
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                checked={mandatory}
+                disabled={saveReleaseMutation.isPending}
+                onChange={(event) => setMandatory(event.target.checked)}
+              />
+            </label>
+            {mandatory ? (
+              <div className="draft-help-banner" role="alert">
+                <strong>确认这是必须强制的情况：</strong>
+                仅用于已确认的严重安全漏洞、服务端无法兼容的协议变更、法律合规阻断。
+                发布上线后立即对所有低版本用户生效，没有宽限期。强制的原因请写在下面的
+                发布说明或上线时的操作原因里，会进审计。
+              </div>
+            ) : null}
+          </div>
+          <div className="form-field">
             <span>{platform === "android" ? "APK 安装包" : "安装包"}</span>
             <FileDropzone
               label={platform === "android" ? "APK 安装包" : "安装包"}
@@ -1366,6 +1402,14 @@ export function ReleasesPage({
                   </td>
                   <td>
                     <StatusPill status={release.status} />
+                    {release.mandatory ? (
+                      <span
+                        className="strategy-pill"
+                        title="低于此版本的用户不能跳过升级"
+                      >
+                        强制升级
+                      </span>
+                    ) : null}
                   </td>
                   <td className="muted">
                     {new Date(release.updatedAt).toLocaleString("zh-CN", {
