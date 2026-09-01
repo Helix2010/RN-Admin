@@ -401,10 +401,34 @@ describe("ReleasesPage actions", () => {
             "en-US": ["Improve stability"],
             "ja-JP": ["安定性を改善"],
           },
+          // 默认不强制：强更必须是运营明确勾的
+          mandatory: false,
         }),
       ),
     );
     expect(apiMocks.action).not.toHaveBeenCalled();
+  });
+
+  it("sends the mandatory flag and warns before doing it", async () => {
+    apiMocks.releases.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "上传 APK" }));
+    expect(screen.queryByText(/仅用于已确认的严重安全漏洞/)).toBeNull();
+
+    await user.click(screen.getByRole("checkbox", { name: /强制升级/ }));
+
+    // 勾上之后必须把后果说清楚：用户不能跳过，且立即生效
+    expect(screen.getByText(/仅用于已确认的严重安全漏洞/)).toBeTruthy();
+    expect(
+      (screen.getByRole("checkbox", { name: /强制升级/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
   });
 
   it("resumes a persisted multipart session and skips completed parts", async () => {
