@@ -10,6 +10,19 @@ import {
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
 
+function compactIdentifier(value: string): string {
+  if (value.length <= 26) return value;
+  return `${value.slice(0, 15)}…${value.slice(-8)}`;
+}
+
+function statusLabel(value: string): string {
+  if (value === "sent") return "已发送";
+  if (value === "failed") return "失败";
+  if (value === "cancelled") return "已取消";
+  if (value === "pending") return "待发送";
+  return value;
+}
+
 export function PushEventsPage({ tenantId }: AdminPageProps) {
   const [status, setStatus] = useState("");
   const outbox = useQuery({
@@ -68,7 +81,7 @@ export function PushEventsPage({ tenantId }: AdminPageProps) {
           </div>
         </div>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table push-outbox-table">
             <thead>
               <tr>
                 <th>事件</th>
@@ -82,9 +95,13 @@ export function PushEventsPage({ tenantId }: AdminPageProps) {
             <tbody>
               {(outbox.data?.items ?? []).map((item) => (
                 <tr key={item.id}>
-                  <td>
-                    <strong className="mono">{item.eventType}</strong>
-                    <small>{item.id}</small>
+                  <td className="push-event-identity-cell">
+                    <strong className="mono event-type-value">
+                      {item.eventType}
+                    </strong>
+                    <small className="mono secondary-value" title={item.id}>
+                      {compactIdentifier(item.id)}
+                    </small>
                   </td>
                   <td>
                     <StatusPill status={item.status} />
@@ -93,9 +110,9 @@ export function PushEventsPage({ tenantId }: AdminPageProps) {
                   <td>
                     {item.sent} / {item.failed}
                   </td>
-                  <td>
+                  <td className="push-error-cell">
                     {item.lastError ? (
-                      <span className="field-error">
+                      <span className="field-error push-error-value">
                         <AlertTriangle size={14} />
                         {item.lastError}
                       </span>
@@ -136,7 +153,7 @@ export function PushEventsPage({ tenantId }: AdminPageProps) {
           </div>
         </div>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table push-deliveries-table">
             <thead>
               <tr>
                 <th>安装实例</th>
@@ -151,22 +168,35 @@ export function PushEventsPage({ tenantId }: AdminPageProps) {
                 <tr
                   key={`${item.eventId}-${item.installationId}-${item.provider}`}
                 >
-                  <td className="mono">{item.installationId}</td>
-                  <td>{item.provider}</td>
+                  <td
+                    className="mono identifier-value"
+                    title={item.installationId}
+                  >
+                    {compactIdentifier(item.installationId)}
+                  </td>
+                  <td>
+                    <strong>{item.provider.toUpperCase()}</strong>
+                  </td>
                   <td>
                     {item.status === "sent" ? (
                       <span className="inline-success">
                         <CheckCircle2 size={14} />
-                        已发送
+                        {statusLabel(item.status)}
                       </span>
-                    ) : (
+                    ) : item.status === "failed" ? (
                       <span className="field-error">
                         <AlertTriangle size={14} />
-                        失败
+                        {statusLabel(item.status)}
                       </span>
+                    ) : (
+                      <StatusPill status={item.status} />
                     )}
                   </td>
-                  <td>{item.failureCode ?? "-"}</td>
+                  <td
+                    className={item.failureCode ? "push-error-cell" : "muted"}
+                  >
+                    {item.failureCode ?? "-"}
+                  </td>
                   <td>
                     {item.sentAt
                       ? new Date(item.sentAt).toLocaleString("zh-CN")

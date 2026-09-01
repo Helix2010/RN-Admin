@@ -86,6 +86,10 @@ function rpcLines(text: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+function chainClass(id: string): string {
+  return `wallet-chain-${id.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
+}
+
 /** 校验用租户看得懂的话说明问题，措辞与服务端保持一致。 */
 function walletProblems(
   draft: WalletDraft,
@@ -402,11 +406,11 @@ function WalletOverview({
           <StatusPill status={projectId ? "configured" : "required"} />
         </div>
         <div className="card-body">
-          <div className="metric-grid metric-grid-compact">
+          <div className="metric-grid wallet-project-metrics">
             <div className="metric">
               <div className="metric-label">Project ID</div>
               <div
-                className="metric-value mono"
+                className="metric-value mono wallet-project-id"
                 data-testid="wallet-project-id"
               >
                 {projectId || "未配置"}
@@ -454,16 +458,30 @@ function WalletOverview({
                 network !== undefined &&
                 network.rpcUrls.join("\n") !== chain.defaultRpcUrls.join("\n");
               return (
-                <div className="config-item" key={chain.id}>
-                  <strong>{chain.name}</strong>
-                  <span className="mono">
-                    chainId {chain.chainId} · {chain.id}
+                <div
+                  className={`config-item wallet-chain-card ${chainClass(chain.id)}`}
+                  key={chain.id}
+                >
+                  <div className="wallet-chain-card-heading">
+                    <strong>{chain.name}</strong>
+                    <span className="wallet-chain-badge">{chain.id}</span>
+                  </div>
+                  <span className="mono wallet-chain-meta">
+                    chainId {chain.chainId}
                   </span>
-                  <strong className="mono">
+                  <strong className="mono wallet-endpoint-value">
                     {network?.rpcUrls.join("、") || "-"}
                   </strong>
-                  <span>{custom ? "租户自定义 RPC" : "平台默认 RPC"}</span>
-                  <span className="mono">
+                  <span
+                    className={
+                      custom
+                        ? "wallet-endpoint-source is-custom"
+                        : "wallet-endpoint-source"
+                    }
+                  >
+                    {custom ? "租户自定义 RPC" : "平台默认 RPC"}
+                  </span>
+                  <span className="mono wallet-endpoint-value">
                     {network?.explorerUrl || chain.defaultExplorerUrl || "-"}
                   </span>
                 </div>
@@ -584,11 +602,14 @@ function WalletEditor({
               endpoint.explorerUrl.trim() !== "" &&
               !isHttps(endpoint.explorerUrl);
             return (
-              <div key={chain.id}>
-                <label className="switch-row">
+              <div
+                className={`wallet-chain-editor-card ${chainClass(chain.id)}`}
+                key={chain.id}
+              >
+                <label className="switch-row wallet-chain-switch-row">
                   <span>
-                    <strong>{chain.name}</strong>
-                    <small className="mono">
+                    <strong className="wallet-chain-title">{chain.name}</strong>
+                    <small className="mono wallet-chain-meta">
                       chainId {chain.chainId} · {chain.id}
                     </small>
                   </span>
