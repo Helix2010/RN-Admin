@@ -287,7 +287,6 @@ export const managedAppConfigSchema = z.object({
 });
 export type ManagedAppConfig = z.infer<typeof managedAppConfigSchema>;
 export type WalletSection = z.infer<typeof walletSectionSchema>;
-export type WalletNetworkSection = WalletSection["networks"][number];
 export type WalletCatalogEntry = z.infer<typeof walletCatalogEntrySchema>;
 
 const languageResourceSchema = z.object({

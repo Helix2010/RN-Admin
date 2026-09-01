@@ -850,6 +850,9 @@ export function ReleasesPage({
         <Button
           onClick={() => {
             setPublishedRelease(null);
+            // 强制升级每次都从关闭开始：上次勾了却没发成功时，残留的勾选会让
+            // 下一次发布意外变成强制，而 checkbox 比输入框更容易被忽略
+            setMandatory(false);
             setShowCreate(true);
           }}
         >
