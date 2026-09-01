@@ -82,10 +82,15 @@ function draftFrom(view: AppConfig, catalog: WalletCatalogEntry[]) {
 type WalletDraft = ReturnType<typeof draftFrom>;
 
 function rpcLines(text: string): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  // 去空行、去空格、去重：重复的端点只是多一次无意义的重试
+  return Array.from(
+    new Set(
+      text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    ),
+  );
 }
 
 function chainClass(id: string): string {
@@ -209,6 +214,8 @@ export function WalletChainsPage({ tenantId }: AdminPageProps) {
     },
     onError: (error) => {
       setConfirmOpen(false);
+      // 乐观锁冲突之后本地版本号已经过期，不刷新的话再点一次还是 409
+      void queryClient.invalidateQueries({ queryKey: ["config", tenantId] });
       setFeedback({ kind: "error", message: `保存失败：${error.message}` });
     },
   });

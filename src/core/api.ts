@@ -211,12 +211,12 @@ const paletteSchema = z.object({
   backdrop: z.string().min(1),
 });
 
-const walletSectionSchema = z.object({
+const walletSectionSchema = z.looseObject({
   walletConnectProjectId: z.string().default(""),
   chains: z.array(z.string()).default([]),
   networks: z
     .array(
-      z.object({
+      z.looseObject({
         id: z.string(),
         chainId: z.number().int(),
         rpcUrls: z.array(z.string()).default([]),
@@ -227,7 +227,7 @@ const walletSectionSchema = z.object({
 });
 
 /** 平台支持的链目录，由服务端下发；管理端不再自己抄一份链表。 */
-const walletCatalogEntrySchema = z.object({
+const walletCatalogEntrySchema = z.looseObject({
   id: z.string(),
   name: z.string(),
   chainId: z.number().int(),
@@ -237,19 +237,19 @@ const walletCatalogEntrySchema = z.object({
   testnet: z.boolean().default(false),
 });
 
-export const managedAppConfigSchema = z.object({
+export const managedAppConfigSchema = z.looseObject({
   configVersion: z.string().trim().min(1),
   ttlSeconds: z.number().int().min(30).max(86400),
-  localization: z.object({
+  localization: z.looseObject({
     fallbackLocale: z.enum(["zh-CN", "en-US"]),
     supportedLocales: z.array(z.enum(["zh-CN", "en-US"])),
     messagesVersion: z.string().trim().min(1),
-    messages: z.object({
+    messages: z.looseObject({
       "zh-CN": z.record(z.string().min(1), z.string().min(1)),
       "en-US": z.record(z.string().min(1), z.string().min(1)),
     }),
   }),
-  theme: z.object({
+  theme: z.looseObject({
     defaultMode: z.literal("system"),
     allowUserOverride: z.boolean(),
     paletteVersion: z.string().trim().min(1),
@@ -268,12 +268,12 @@ export const managedAppConfigSchema = z.object({
     directUpdateEnabled: z.boolean(),
     diagnosticsEnabled: z.boolean(),
   }),
-  updatePolicy: z.object({
+  updatePolicy: z.looseObject({
     minSupportedVersion: z.string().trim().min(1),
     latestVersion: z.string().trim().min(1),
     otaChannel: z.string().trim().min(1),
   }),
-  support: z.object({ statusPageUrl: z.url() }),
+  support: z.looseObject({ statusPageUrl: z.url() }),
   /**
    * 钱包与链参数：App 启动时随 bootstrap 下发，改完不需要重新打包。
    *
@@ -804,7 +804,10 @@ export const adminApi = {
   },
   saveConfig: (
     tenantId: string,
-    config: ManagedAppConfig,
+    // wallet 可以省略：服务端会沿用已存的钱包段。配置中心必须省略它——它拿到的是
+    // 归一化之后、平台默认端点已经物化进去的值，原样 PATCH 回去会把默认端点固化成
+    // 租户快照，平台以后换默认端点这个租户就停在旧的上
+    config: Omit<ManagedAppConfig, "wallet"> & { wallet?: WalletSection },
     expectedVersion: number,
     reason: string,
   ) => {

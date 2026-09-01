@@ -250,9 +250,10 @@ describe("AppConfigPage theme workbench", () => {
 });
 
 describe("AppConfigPage wallet section", () => {
-  it("keeps the wallet section when saving an unrelated change", async () => {
-    // 回归：schema 里漏掉 wallet 时，配置中心保存会把租户的 projectId
-    // 和链端点一起清空——改一次主题色就让外部钱包连不上
+  it("leaves the wallet section to the server when saving an unrelated change", async () => {
+    // 两个坑都要避开：schema 里漏掉 wallet 时保存会把租户的 projectId 和链端点
+    // 一起清空；而把归一化后的 wallet 原样 PATCH 回去，又会把平台默认端点固化成
+    // 租户快照。正确做法是根本不发它——服务端沿用已存的值
     apiMocks.config.mockResolvedValue(configView());
     apiMocks.saveConfig.mockResolvedValue(configView());
     const user = userEvent.setup();
@@ -272,13 +273,9 @@ describe("AppConfigPage wallet section", () => {
 
     const [, sent] = apiMocks.saveConfig.mock.calls[0] as [
       string,
-      ManagedAppConfig,
+      ManagedAppConfig & { wallet?: unknown },
     ];
-    expect(sent.wallet.walletConnectProjectId).toBe(
-      "3f8a2c1d9e4b6a70f2c5d8e1b4a70932",
-    );
-    expect(sent.wallet.networks[0].rpcUrls).toEqual([
-      "https://bsc-dataseed.bnbchain.org",
-    ]);
+    expect(sent.wallet).toBeUndefined();
+    expect(sent.ttlSeconds).toBe(600);
   });
 });

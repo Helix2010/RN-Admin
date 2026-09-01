@@ -187,7 +187,15 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
       config: ManagedAppConfig;
       expectedVersion: number;
       changeReason: string;
-    }) => adminApi.saveConfig(tenantId, config, expectedVersion, changeReason),
+    }) =>
+      adminApi.saveConfig(
+        tenantId,
+        // 钱包段由「钱包与链」页维护；这里省略它，服务端沿用已存的值。
+        // 传回去的是归一化后的视图，会把平台默认端点固化成租户快照
+        { ...config, wallet: undefined },
+        expectedVersion,
+        changeReason,
+      ),
     onSuccess: (saved) => {
       queryClient.setQueryData<AppConfig>(["config", tenantId], saved);
       void queryClient.invalidateQueries({ queryKey: ["audits", tenantId] });
@@ -204,6 +212,8 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
     },
     onError: (error) => {
       setConfirmOpen(false);
+      // 乐观锁冲突（别人先改了）之后本地版本号已经过期，不刷新的话再点一次还是 409
+      void queryClient.invalidateQueries({ queryKey: ["config", tenantId] });
       setFeedback({ kind: "error", message: `保存失败：${error.message}` });
     },
   });
