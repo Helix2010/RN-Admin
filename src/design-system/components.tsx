@@ -16,6 +16,29 @@ import {
   X,
 } from "lucide-react";
 
+let bodyScrollLockCount = 0;
+let bodyScrollLockPreviousOverflow: string | null = null;
+
+function useBodyScrollLock(locked: boolean) {
+  useEffect(() => {
+    if (!locked || typeof document === "undefined") return;
+
+    if (bodyScrollLockCount === 0) {
+      bodyScrollLockPreviousOverflow = document.body.style.overflow;
+    }
+    bodyScrollLockCount += 1;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+      if (bodyScrollLockCount === 0) {
+        document.body.style.overflow = bodyScrollLockPreviousOverflow ?? "";
+        bodyScrollLockPreviousOverflow = null;
+      }
+    };
+  }, [locked]);
+}
+
 export function Button({
   children,
   variant = "primary",
@@ -271,6 +294,8 @@ export function ConfirmDialog({
   const onCancelRef = useRef(onCancel);
   const loadingRef = useRef(loading);
 
+  useBodyScrollLock(open);
+
   useEffect(() => {
     onCancelRef.current = onCancel;
     loadingRef.current = loading;
@@ -279,8 +304,6 @@ export function ConfirmDialog({
   useEffect(() => {
     if (!open || typeof document === "undefined") return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !loadingRef.current) {
         event.preventDefault();
@@ -290,7 +313,6 @@ export function ConfirmDialog({
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
   }, [open]);
@@ -381,6 +403,8 @@ export function SidePanel({
   const descriptionId = useId();
   const onCloseRef = useRef(onClose);
 
+  useBodyScrollLock(open);
+
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
@@ -388,8 +412,6 @@ export function SidePanel({
   useEffect(() => {
     if (!open || typeof document === "undefined") return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -399,7 +421,6 @@ export function SidePanel({
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
   }, [open]);

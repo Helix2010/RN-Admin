@@ -87,6 +87,42 @@ describe("SidePanel", () => {
   });
 });
 
+describe("overlay scroll locking", () => {
+  it("restores page scrolling after nested overlays close together", () => {
+    const { rerender } = render(
+      <>
+        <SidePanel open title="操作面板" onClose={vi.fn()}>
+          <span>面板内容</span>
+        </SidePanel>
+        <ConfirmDialog
+          open
+          title="确认操作？"
+          onCancel={vi.fn()}
+          onConfirm={vi.fn()}
+        />
+      </>,
+    );
+
+    expect(document.body.style.overflow).toBe("hidden");
+
+    rerender(
+      <>
+        <SidePanel open={false} title="操作面板" onClose={vi.fn()}>
+          <span>面板内容</span>
+        </SidePanel>
+        <ConfirmDialog
+          open={false}
+          title="确认操作？"
+          onCancel={vi.fn()}
+          onConfirm={vi.fn()}
+        />
+      </>,
+    );
+
+    expect(document.body.style.overflow).toBe("");
+  });
+});
+
 describe("FeedbackNotice", () => {
   it("renders viewport errors as an assertive dismissible alert", async () => {
     const onDismiss = vi.fn();
