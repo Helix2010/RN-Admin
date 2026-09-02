@@ -20,6 +20,11 @@ const WalletChainsPage = lazy(() =>
     default: page,
   })),
 );
+const PredictPlatformPage = lazy(() =>
+  import("./predict-page").then(({ PredictPlatformPage: page }) => ({
+    default: page,
+  })),
+);
 export const appConfigPlugin: AdminPlugin = {
   id: "app-config",
   label: "应用配置",
@@ -29,12 +34,14 @@ export const appConfigPlugin: AdminPlugin = {
     { id: "localization", label: "多语言管理", icon: "languages" },
     { id: "branding", label: "品牌与启动", icon: "palette" },
     { id: "wallet", label: "钱包与链", icon: "wallet" },
+    { id: "predict", label: "预测市场", icon: "predict" },
   ],
   pages: {
     config: AppConfigPage,
     localization: LocalizationPage,
     branding: BrandingPage,
     wallet: WalletChainsPage,
+    predict: PredictPlatformPage,
   },
 };
 export const appConfigIcon = Settings2;

@@ -788,6 +788,11 @@ function ConfigEditor({
                 <span>
                   <strong>{moduleLabels[key]}</strong>
                   <small className="mono">modules.{key}</small>
+                  {key === "predict" && (
+                    <small className="section-caption">
+                      开启前要在「预测市场」页配置平台关联（接口域名、scopeId、链），否则保存会被服务端拒绝。
+                    </small>
+                  )}
                 </span>
                 <input
                   id={`app-config-module-${key}`}

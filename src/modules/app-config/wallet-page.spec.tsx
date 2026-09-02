@@ -121,6 +121,7 @@ function configView(wallet?: Partial<ManagedAppConfig["wallet"]>): AppConfig {
         dark: palette,
       },
       modules: { predict: true, dex: true },
+      services: {},
       features: {
         updateCenter: true,
         otaEnabled: true,

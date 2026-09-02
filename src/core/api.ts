@@ -340,6 +340,26 @@ export type TokenUpdateInput = {
   expectedVersion: number;
 };
 
+export const predictServiceSchema = z.object({
+  domain: z.string().trim().min(1),
+  scopeId: z
+    .string()
+    .trim()
+    .regex(/^0x[0-9a-f]{64}$/),
+  chain: z.string().trim().min(1),
+});
+const servicesSectionSchema = z.object({
+  predict: predictServiceSchema.optional(),
+});
+const predictProbeSchema = z.object({
+  ok: z.boolean(),
+  brand: z.string(),
+  chainId: z.number().int(),
+  chainName: z.string(),
+  scopeId: z.string(),
+  problems: z.array(z.string()),
+});
+
 export const managedAppConfigSchema = z.looseObject({
   configVersion: z.string().trim().min(1),
   ttlSeconds: z.number().int().min(30).max(86400),
@@ -390,8 +410,16 @@ export const managedAppConfigSchema = z.looseObject({
     chains: [],
     networks: [],
   }),
+  /**
+   * 外部服务的接入配置。`predict` 把本租户和预测平台上的租户关联起来：两边的租户 id
+   * 不假定相同，关联只靠这三个字段（接口域名、平台 scopeId、我们这边的链）。
+   * 服务端保证这一段总是对象；predict 缺失表示还没配置。
+   */
+  services: servicesSectionSchema,
 });
 export type ManagedAppConfig = z.infer<typeof managedAppConfigSchema>;
+export type PredictService = z.infer<typeof predictServiceSchema>;
+export type PredictProbe = z.infer<typeof predictProbeSchema>;
 export type WalletSection = z.infer<typeof walletSectionSchema>;
 export type WalletCatalogEntry = z.infer<typeof walletCatalogEntrySchema>;
 
@@ -930,6 +958,12 @@ export const adminApi = {
       }),
     });
   },
+  /** 管理端「测试连接」：服务端去请求平台的 public-info，比对 scopeId 与链 */
+  probePredict: (input: PredictService) =>
+    request("/v1/admin/predict/probe", predictProbeSchema, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   branding: () => request("/v1/admin/branding", brandingViewSchema),
   saveBranding: (
     config: Record<string, unknown>,

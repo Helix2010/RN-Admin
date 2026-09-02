@@ -123,6 +123,7 @@ function configView(): AppConfig {
         dark: palette,
       },
       modules: { predict: true, dex: true },
+      services: {},
       features: {
         updateCenter: true,
         otaEnabled: true,

@@ -2,21 +2,22 @@ import { Suspense, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
-  Menu,
   ChevronRight,
   CircleHelp,
-  Coins,
-  LayoutDashboard,
-  LogOut,
-  Settings2,
   CloudCog,
-  Rocket,
+  Coins,
   FileClock,
   Languages,
-  Palette,
-  Smartphone,
+  LayoutDashboard,
+  LogOut,
+  Menu,
   Moon,
+  Palette,
+  Rocket,
+  Settings2,
+  Smartphone,
   Sun,
+  TrendingUp,
   Wallet,
 } from "lucide-react";
 import {
@@ -73,6 +74,7 @@ const iconMap = {
   bell: Bell,
   wallet: Wallet,
   coins: Coins,
+  predict: TrendingUp,
 };
 
 export function App() {

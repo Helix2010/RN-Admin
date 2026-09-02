@@ -100,6 +100,7 @@ describe("adminApi.config", () => {
       dark: palette(),
     },
     modules: { predict: true, dex: true },
+    services: {},
     features: {
       updateCenter: true,
       otaEnabled: true,
