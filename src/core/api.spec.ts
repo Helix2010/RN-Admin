@@ -114,6 +114,7 @@ describe("adminApi.config", () => {
     support: { statusPageUrl: "https://status.anyfun.win" },
     wallet: {
       walletConnectProjectId: "3f8a2c1d9e4b6a70f2c5d8e1b4a70932",
+      onchainSends: false,
       chains: ["bsc"],
       networks: [
         {
@@ -155,6 +156,9 @@ describe("adminApi.config", () => {
             chainId: 56,
             defaultRpcUrls: ["https://bsc-dataseed.bnbchain.org"],
             defaultExplorerUrl: "https://bscscan.com",
+            testnet: false,
+            nativeSymbol: "BNB",
+            nativeDecimals: 18,
           },
         ],
       },
@@ -170,26 +174,6 @@ describe("adminApi.config", () => {
     ]);
     expect(view.metadata.walletCatalog[0]?.chainId).toBe(56);
     expect(view.summary.wallet.walletConnectConfigured).toBe(true);
-  });
-
-  it("still loads from a server that does not deliver wallet parameters yet", async () => {
-    const { wallet, ...withoutWallet } = serverConfig;
-    void wallet;
-    stubConfigResponse({
-      summary: { ...summary(), wallet: undefined },
-      config: withoutWallet,
-      metadata: {
-        databaseVersion: 7,
-        updatedBy: "admin",
-        updatedAt: "2026-09-01T00:00:00Z",
-      },
-    });
-
-    const view = await adminApi.config("tenant-a");
-
-    expect(view.config.wallet.chains).toEqual([]);
-    expect(view.metadata.walletCatalog).toEqual([]);
-    expect(view.summary.wallet.walletConnectConfigured).toBe(false);
   });
 });
 
@@ -240,6 +224,7 @@ describe("adminApi tokens", () => {
           logoColor: "#F0B90B",
           sortWeight: 1000,
           enabled: true,
+          allowlisted: false,
           metadataSyncedAt: null,
           updatedAt: "2026-09-02T01:00:00.000Z",
           extra: "passes through",
@@ -263,26 +248,23 @@ describe("adminApi tokens", () => {
     });
     const native = result.tokens[1];
     expect(native?.metadataSyncedAt).toBeNull();
-    // 缺省按"不在白名单"处理：宁可多提示，也不让运营以为用户看不到未验证警示
     expect(native?.allowlisted).toBe(false);
     expect((native as Record<string, unknown> | undefined)?.extra).toBe(
       "passes through",
     );
   });
 
-  it("drops a token whose decimals are outside 0-36", async () => {
+  it("rejects the whole list when a token is outside the protocol range", async () => {
+    // 服务端写入时就拒绝这种值；列表里出现就是数据坏了，按 error 态呈现，不丢一行继续
     stubJson({
       tokens: [{ ...usdt, decimals: 40 }],
       metadata: { databaseVersion: 12 },
     });
 
-    // 越界的那一行被丢掉，列表本身仍然可用（见下面的 tolerance 用例）
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await expect(adminApi.listTokens()).resolves.toMatchObject({ tokens: [] });
-    warn.mockRestore();
+    await expect(adminApi.listTokens()).rejects.toThrow();
   });
 
-  it("returns preview data with exists defaulting to null", async () => {
+  it("returns preview data, with exists explicitly null for a new token", async () => {
     stubJson({
       chain: "bsc",
       contractAddress: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
@@ -290,6 +272,7 @@ describe("adminApi tokens", () => {
       name: "USD Coin",
       decimals: 18,
       allowlisted: true,
+      exists: null,
     });
 
     const preview = await adminApi.previewToken({
@@ -417,10 +400,9 @@ function summary() {
   };
 }
 
-describe("token list tolerance", () => {
-  it("drops a row it cannot parse instead of failing the whole list", async () => {
-    // 出问题的那一行恰恰需要运营在这个页面上停用或删除它，整页不可用就没法自救
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+describe("token list strictness", () => {
+  it("fails the whole list when one row cannot be parsed", async () => {
+    // 不逐条丢弃：坏行要靠迁移修数据，页面按 error 态给出原因
     const good = {
       id: 1,
       scope: "global",
@@ -456,11 +438,6 @@ describe("token list tolerance", () => {
       ),
     );
 
-    const list = await adminApi.listTokens();
-
-    expect(list.tokens.map((token) => token.id)).toEqual([1]);
-    expect(list.metadata.databaseVersion).toBe(3);
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
+    await expect(adminApi.listTokens()).rejects.toThrow();
   });
 });

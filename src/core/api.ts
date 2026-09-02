@@ -212,20 +212,18 @@ const paletteSchema = z.object({
 });
 
 const walletSectionSchema = z.looseObject({
-  walletConnectProjectId: z.string().default(""),
-  // 转出是否真的上链（花真钱）。老服务端不下发时按关处理
-  onchainSends: z.boolean().default(false),
-  chains: z.array(z.string()).default([]),
-  networks: z
-    .array(
-      z.looseObject({
-        id: z.string(),
-        chainId: z.number().int(),
-        rpcUrls: z.array(z.string()).default([]),
-        explorerUrl: z.string().default(""),
-      }),
-    )
-    .default([]),
+  walletConnectProjectId: z.string(),
+  /** 转出是否真的上链（花真钱） */
+  onchainSends: z.boolean(),
+  chains: z.array(z.string()),
+  networks: z.array(
+    z.looseObject({
+      id: z.string(),
+      chainId: z.number().int(),
+      rpcUrls: z.array(z.string()),
+      explorerUrl: z.string(),
+    }),
+  ),
 });
 
 /** 平台支持的链目录，由服务端下发；管理端不再自己抄一份链表。 */
@@ -233,13 +231,12 @@ const walletCatalogEntrySchema = z.looseObject({
   id: z.string(),
   name: z.string(),
   chainId: z.number().int(),
-  defaultRpcUrls: z.array(z.string()).default([]),
-  defaultExplorerUrl: z.string().default(""),
-  // 老服务端不下发这个标记时按主网处理
-  testnet: z.boolean().default(false),
-  // 原生币的符号与精度（代币目录按链分组时显示）；老服务端不下发时留空
-  nativeSymbol: z.string().default(""),
-  nativeDecimals: z.number().int().default(18),
+  defaultRpcUrls: z.array(z.string()),
+  defaultExplorerUrl: z.string(),
+  testnet: z.boolean(),
+  /** 原生币的符号与精度（代币目录按链分组时显示） */
+  nativeSymbol: z.string(),
+  nativeDecimals: z.number().int(),
 });
 
 /**
@@ -247,7 +244,7 @@ const walletCatalogEntrySchema = z.looseObject({
  *
  * symbol / decimals 由服务端读链回填，管理端只展示；displayDecimals 只影响显示。
  */
-export const tokenSchema = z.looseObject({
+const tokenSchema = z.looseObject({
   id: z.number().int(),
   scope: z.enum(["global", "tenant"]),
   chain: z.string(),
@@ -257,52 +254,39 @@ export const tokenSchema = z.looseObject({
   name: z.string(),
   decimals: z.number().int().min(0).max(36),
   displayDecimals: z.number().int().min(0),
-  logoColor: z
-    .string()
-    .regex(/^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/),
-  sortWeight: z.number().int().default(0),
+  // 头像底色只认 #RRGGBB，三端一致
+  logoColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  sortWeight: z.number().int(),
   enabled: z.boolean(),
-  // 服务端按内置白名单判断。缺省时按"不在白名单"处理：宁可多提示一次，
-  // 也不要让运营以为用户转出时不会看到未验证警示
-  allowlisted: z.boolean().default(false),
-  // native 行没有链上元数据，为 null
-  metadataSyncedAt: z.string().nullable().default(null),
+  /** 服务端按内置白名单判断 */
+  allowlisted: z.boolean(),
+  /** native 行没有链上元数据，为 null */
+  metadataSyncedAt: z.string().nullable(),
   updatedAt: z.string(),
 });
 export type Token = z.infer<typeof tokenSchema>;
 
 /** preview 只读链、不入库：返回链上元数据与目录里是否已有同一代币。 */
-export const tokenPreviewSchema = z.looseObject({
+const tokenPreviewSchema = z.looseObject({
   chain: z.string(),
   contractAddress: z.string(),
   symbol: z.string(),
   name: z.string(),
   decimals: z.number().int().min(0).max(36),
-  allowlisted: z.boolean().default(false),
+  allowlisted: z.boolean(),
   exists: z
     .object({ id: z.number().int(), scope: z.enum(["global", "tenant"]) })
-    .nullable()
-    .default(null),
+    .nullable(),
 });
 export type TokenPreview = z.infer<typeof tokenPreviewSchema>;
 
 const tokenMetadataSchema = z.object({
   databaseVersion: z.number().int().nonnegative(),
 });
-/**
- * 列表里一条脏数据（比如手工改库把 decimals 改成 37）不能让整页不可用——
- * 出问题的那一行恰恰需要运营在这个页面上停用或删除它。逐条解析，坏的丢掉并留痕。
- */
-const tolerantTokenArraySchema = z.array(z.unknown()).transform((rows) =>
-  rows.flatMap((row) => {
-    const parsed = tokenSchema.safeParse(row);
-    if (parsed.success) return [parsed.data];
-    console.warn("[tokens] 丢弃一条无法解析的代币记录", parsed.error.issues);
-    return [];
-  }),
-);
+// 逐行严格：一条不合法就是整个列表不可用，页面按 error 态呈现并给出原因。
+// 服务端在写入时就拒绝坏行，出现在列表里只能是数据坏了——那要用迁移修，不是在这里丢掉
 const tokenListSchema = z.object({
-  tokens: tolerantTokenArraySchema,
+  tokens: z.array(tokenSchema),
   metadata: tokenMetadataSchema,
 });
 export type TokenList = z.infer<typeof tokenListSchema>;
@@ -319,10 +303,10 @@ const tokenOnchainPairSchema = z.object({
  * 已确认写入（带更新后的行与新版本号）。
  */
 const tokenResyncSchema = z.union([
+  // 与库中一致时不写入、版本不变，所以没有 metadata；但服务端更新了链上读取时间，token 是新的
   z.object({
     changed: z.literal(false),
     token: tokenSchema,
-    metadata: tokenMetadataSchema.optional(),
   }),
   z.object({
     changed: z.literal(true),
@@ -489,7 +473,7 @@ const configViewSchema = z.object({
     databaseVersion: z.number().int().positive(),
     updatedBy: z.string(),
     updatedAt: z.string(),
-    walletCatalog: z.array(walletCatalogEntrySchema).default([]),
+    walletCatalog: z.array(walletCatalogEntrySchema),
   }),
 });
 

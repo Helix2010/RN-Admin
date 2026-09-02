@@ -701,23 +701,42 @@ describe("TokenPage edit token", () => {
     ).toBeNull();
   });
 
-  it("confirms with old and new values before writing a chain re-read", async () => {
-    apiMocks.resyncToken
-      .mockResolvedValueOnce({
-        changed: true,
-        current: { symbol: "USDT", decimals: 18 },
-        onchain: { symbol: "USDT", decimals: 6 },
-      })
-      .mockResolvedValueOnce({
-        changed: true,
-        token: { ...tokenList().tokens[1]!, decimals: 6, displayDecimals: 2 },
-        metadata: { databaseVersion: 13 },
-      });
+  it("disables the chain re-read for platform-global rows and says why", async () => {
+    // 服务端对全局行（及其租户覆盖行）的 resync 一律 403：按钮提前禁用，不给一个必然失败的确认框
     const user = userEvent.setup();
     renderPage();
 
     await user.click(await screen.findByRole("button", { name: "编辑 USDT" }));
     const panel = screen.getByRole("dialog", { name: "编辑 USDT" });
+
+    expect(
+      (
+        within(panel).getByRole("button", {
+          name: "重新从链上读取",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(within(panel).getByText(/链上元数据由平台维护/)).toBeTruthy();
+    expect(apiMocks.resyncToken).not.toHaveBeenCalled();
+  });
+
+  it("confirms with old and new values before writing a chain re-read", async () => {
+    apiMocks.resyncToken
+      .mockResolvedValueOnce({
+        changed: true,
+        current: { symbol: "CAKE", decimals: 18 },
+        onchain: { symbol: "CAKE", decimals: 6 },
+      })
+      .mockResolvedValueOnce({
+        changed: true,
+        token: { ...tokenList().tokens[2]!, decimals: 6, displayDecimals: 2 },
+        metadata: { databaseVersion: 13 },
+      });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "编辑 CAKE" }));
+    const panel = screen.getByRole("dialog", { name: "编辑 CAKE" });
     // 重新读取也写审计，所以先要原因
     await user.click(
       within(panel).getByRole("button", { name: "重新从链上读取" }),
@@ -737,7 +756,7 @@ describe("TokenPage edit token", () => {
       name: "链上数据与目录不一致",
     });
     expect(apiMocks.resyncToken).toHaveBeenCalledTimes(1);
-    expect(apiMocks.resyncToken).toHaveBeenCalledWith(12, {
+    expect(apiMocks.resyncToken).toHaveBeenCalledWith(40, {
       reason: "核对链上精度",
       expectedVersion: 12,
       confirm: false,
@@ -752,7 +771,7 @@ describe("TokenPage edit token", () => {
     );
 
     await waitFor(() => expect(apiMocks.resyncToken).toHaveBeenCalledTimes(2));
-    expect(apiMocks.resyncToken).toHaveBeenLastCalledWith(12, {
+    expect(apiMocks.resyncToken).toHaveBeenLastCalledWith(40, {
       reason: "核对链上精度",
       expectedVersion: 12,
       confirm: true,
@@ -769,13 +788,13 @@ describe("TokenPage edit token", () => {
   it("tells the operator when the chain matches the catalogue", async () => {
     apiMocks.resyncToken.mockResolvedValue({
       changed: false,
-      token: tokenList().tokens[1]!,
+      token: tokenList().tokens[2]!,
     });
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole("button", { name: "编辑 USDT" }));
-    const panel = screen.getByRole("dialog", { name: "编辑 USDT" });
+    await user.click(await screen.findByRole("button", { name: "编辑 CAKE" }));
+    const panel = screen.getByRole("dialog", { name: "编辑 CAKE" });
     await user.type(
       within(panel).getByRole("textbox", { name: /修改原因/ }),
       "核对链上精度",

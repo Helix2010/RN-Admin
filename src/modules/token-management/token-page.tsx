@@ -4,7 +4,6 @@ import { Edit3, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import {
   adminApi,
   ApiError,
-  type AppConfig,
   type Token,
   type TokenList,
   type TokenCreateInput,
@@ -54,7 +53,10 @@ const writeErrorMessages: Record<string, string> = {
   TOKEN_FIELD_READONLY:
     "symbol、decimals、链与合约地址不能修改，只能重新从链上读取。",
   TOKEN_GLOBAL_READONLY: "平台全局代币不能删除，可停用。",
-  TOKEN_NATIVE_NO_RESYNC: "原生币没有合约，不需要从链上读取。",
+  TOKEN_GLOBAL_METADATA_READONLY:
+    "平台全局代币的链上元数据由平台维护，租户不能重新读取。",
+  TOKEN_NATIVE_REQUIRED:
+    "原生币不能停用或删除：要停用它，请在钱包配置里关闭这条链。",
   CONFIG_VERSION_CONFLICT: "配置刚被其他人修改过，列表已刷新，请重新操作。",
 };
 
@@ -82,30 +84,9 @@ function syncedAtLabel(value: string | null): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
 }
 
-/** 链目录里没有这条链时的占位条目：只知道 id，其余按最保守的值处理。 */
-function fallbackChain(id: string): WalletCatalogEntry {
-  return {
-    id,
-    name: id.toUpperCase(),
-    chainId: 0,
-    defaultRpcUrls: [],
-    defaultExplorerUrl: "",
-    testnet: false,
-    nativeSymbol: "",
-    nativeDecimals: 18,
-  };
-}
-
-function catalogFrom(view: AppConfig, tokens: Token[]): WalletCatalogEntry[] {
-  if (view.metadata.walletCatalog.length > 0)
-    return view.metadata.walletCatalog;
-  // 老服务端没有链目录：至少把目录里已有的链列出来，添加表单也还能选
-  return Array.from(new Set(tokens.map((token) => token.chain)), fallbackChain);
-}
-
 type ChainGroup = { chain: WalletCatalogEntry; tokens: Token[] };
 
-/** 按链目录顺序分组；目录里没有的链排在最后。组内 sortWeight 降序、symbol 升序，与下发顺序一致。 */
+/** 按链目录顺序分组。组内 sortWeight 降序、symbol 升序，与下发顺序一致。 */
 function groupByChain(
   tokens: Token[],
   catalog: WalletCatalogEntry[],
@@ -113,10 +94,12 @@ function groupByChain(
   const chains = new Map<string, WalletCatalogEntry>(
     catalog.map((chain) => [chain.id, chain]),
   );
-  for (const token of tokens) {
+  for (const token of tokens)
     if (!chains.has(token.chain))
-      chains.set(token.chain, fallbackChain(token.chain));
-  }
+      // 代币只可能在平台链目录里的链上：目录里没有就是服务端数据不一致，按 error 态呈现
+      throw new Error(
+        `代币 ${token.symbol} 所在的链 ${token.chain} 不在平台链目录里`,
+      );
   return Array.from(chains.values()).map((chain) => ({
     chain,
     tokens: tokens
@@ -193,11 +176,11 @@ export function TokenPage({ tenantId }: AdminPageProps) {
             reason,
             expectedVersion,
           }),
-    onSuccess: (_result, variables) => {
+    onSuccess: (result, variables) => {
       setRowAction(null);
       setRowReason("");
       setRowReasonError("");
-      refreshAfterWrite();
+      refreshAfterWrite(result.metadata);
       const { token } = variables;
       setFeedback({
         kind: "success",
@@ -238,7 +221,9 @@ export function TokenPage({ tenantId }: AdminPageProps) {
   const list = tokensQuery.data;
   const config = configQuery.data;
   if (!list || !config) return <EmptyState title="没有代币目录" />;
-  const catalog = catalogFrom(config, list.tokens);
+  const catalog = config.metadata.walletCatalog;
+  // 钱包配置里没启用的链，它上面的代币不会下发给 App：卡片与添加结果都要说清
+  const enabledChains = config.config.wallet.chains;
   const groups = groupByChain(list.tokens, catalog);
   const expectedVersion = list.metadata.databaseVersion;
   const globalCount = list.tokens.filter((t) => t.scope === "global").length;
@@ -314,6 +299,7 @@ export function TokenPage({ tenantId }: AdminPageProps) {
           <ChainTokenCard
             key={group.chain.id}
             group={group}
+            enabled={enabledChains.includes(group.chain.id)}
             onEdit={(token) => {
               setFeedback(null);
               setPanel({ mode: "edit", token });
@@ -340,12 +326,15 @@ export function TokenPage({ tenantId }: AdminPageProps) {
           catalog={catalog}
           expectedVersion={expectedVersion}
           onClose={() => setPanel(null)}
-          onCreated={(token) => {
+          onCreated={(token, metadata) => {
             setPanel(null);
-            refreshAfterWrite();
+            refreshAfterWrite(metadata);
+            const chainName = chainOf(token)?.name ?? token.chain;
             setFeedback({
               kind: "success",
-              message: `已添加 ${token.symbol}（${chainOf(token)?.name ?? token.chain}），App 下次刷新 bootstrap 后即可看到。`,
+              message: enabledChains.includes(token.chain)
+                ? `已添加 ${token.symbol}（${chainName}），App 下次刷新 bootstrap 后即可看到。`
+                : `已添加 ${token.symbol}（${chainName}）。这条链未在钱包配置里启用，App 不会收到它；到钱包配置启用这条链后生效。`,
             });
           }}
           onFailed={recoverFromFailure}
@@ -358,9 +347,9 @@ export function TokenPage({ tenantId }: AdminPageProps) {
           chain={chainOf(panel.token)}
           expectedVersion={expectedVersion}
           onClose={() => setPanel(null)}
-          onSaved={(saved, before) => {
+          onSaved={(saved, before, metadata) => {
             setPanel(null);
-            refreshAfterWrite();
+            refreshAfterWrite(metadata);
             setFeedback({
               kind: "success",
               message:
@@ -450,11 +439,14 @@ export function TokenPage({ tenantId }: AdminPageProps) {
 
 function ChainTokenCard({
   group,
+  enabled,
   onEdit,
   onToggle,
   onDelete,
 }: {
   group: ChainGroup;
+  /** 这条链是否在钱包配置里启用；没启用的链上的代币不会下发给 App */
+  enabled: boolean;
   onEdit: (token: Token) => void;
   onToggle: (token: Token) => void;
   onDelete: (token: Token) => void;
@@ -474,14 +466,17 @@ function ChainTokenCard({
                 测试网
               </span>
             ) : null}
+            {enabled ? null : (
+              <span
+                className="status-pill status-draft"
+                title="这条链未在钱包配置里启用，App 不会收到它上面的代币"
+              >
+                链未启用
+              </span>
+            )}
           </h2>
           <p className="section-caption mono">
-            {chain.chainId > 0 ? `chainId ${chain.chainId} · ` : ""}
-            {chain.id}
-            {chain.nativeSymbol
-              ? ` · 原生币 ${chain.nativeSymbol}（${chain.nativeDecimals} 位）`
-              : ""}
-            {` · ${tokens.length} 个代币`}
+            {`chainId ${chain.chainId} · ${chain.id} · 原生币 ${chain.nativeSymbol}（${chain.nativeDecimals} 位） · ${tokens.length} 个代币`}
           </p>
         </div>
       </div>
@@ -733,7 +728,7 @@ function CreateTokenPanel({
   catalog: WalletCatalogEntry[];
   expectedVersion: number;
   onClose: () => void;
-  onCreated: (token: Token) => void;
+  onCreated: (token: Token, metadata: { databaseVersion: number }) => void;
   onFailed: () => void;
 }) {
   const [step, setStep] = useState<CreateStep>(1);
@@ -777,7 +772,7 @@ function CreateTokenPanel({
   });
   const createMutation = useMutation({
     mutationFn: (payload: TokenCreateInput) => adminApi.createToken(payload),
-    onSuccess: (result) => onCreated(result.token),
+    onSuccess: (result) => onCreated(result.token, result.metadata),
     onError: (error) => {
       setConfirmOpen(false);
       setSubmitError(describeError(error, writeErrorMessages));
@@ -1027,7 +1022,7 @@ function CreateTokenPanel({
                   onChange={(event) => setName(event.target.value)}
                 />
                 <small>
-                  链上预填，可改成用户更熟悉的叫法。留空则沿用链上名称。
+                  链上预填，可改成用户更熟悉的叫法；留空则沿用链上名称，合约没有名称时服务端用符号代替。保存后名称不能为空。
                 </small>
               </label>
               {preview.allowlisted ? (
@@ -1219,7 +1214,11 @@ function EditTokenPanel({
   chain: WalletCatalogEntry | undefined;
   expectedVersion: number;
   onClose: () => void;
-  onSaved: (saved: Token, before: Token) => void;
+  onSaved: (
+    saved: Token,
+    before: Token,
+    metadata: { databaseVersion: number },
+  ) => void;
   onResynced: (metadata?: { databaseVersion: number }) => void;
   onFailed: () => void;
 }) {
@@ -1257,7 +1256,10 @@ function EditTokenPanel({
       setResyncDiff(null);
       setSubmitError("");
       if (!result.changed) {
+        // 没有差异也写了链上读取时间：行是新的，列表也要刷新
+        setCurrent(result.token);
         setNotice("链上数据与目录一致，没有需要更新的内容。");
+        onResynced();
         return;
       }
       if ("token" in result) {
@@ -1272,7 +1274,7 @@ function EditTokenPanel({
         setNotice(
           `已按链上数据更新：${result.token.symbol} · ${result.token.decimals} 位。`,
         );
-        onResynced("metadata" in result ? result.metadata : undefined);
+        onResynced(result.metadata);
         return;
       }
       setNotice("");
@@ -1288,7 +1290,7 @@ function EditTokenPanel({
   const updateMutation = useMutation({
     mutationFn: (payload: TokenUpdateInput) =>
       adminApi.updateToken(current.id, payload),
-    onSuccess: (result) => onSaved(result.token, current),
+    onSuccess: (result) => onSaved(result.token, current, result.metadata),
     onError: (error) => {
       setConfirmOpen(false);
       setSubmitError(describeError(error, writeErrorMessages));
@@ -1436,20 +1438,30 @@ function EditTokenPanel({
               <span>
                 {isNative
                   ? "原生币由平台维护，没有链上元数据。"
-                  : current.metadataSyncedAt
-                    ? `上次从链上读取：${syncedAtLabel(current.metadataSyncedAt)}`
-                    : "尚未记录链上读取时间。"}
+                  : current.scope === "global"
+                    ? "平台全局代币的链上元数据由平台维护。"
+                    : current.metadataSyncedAt
+                      ? `上次从链上读取：${syncedAtLabel(current.metadataSyncedAt)}`
+                      : "尚未记录链上读取时间。"}
               </span>
               {isNative ? null : (
-                <Button
-                  variant="ghost"
-                  type="button"
-                  onClick={startResync}
-                  disabled={busy}
+                <span
+                  title={
+                    current.scope === "global"
+                      ? "平台全局代币的链上元数据由平台维护，租户不能重新读取"
+                      : undefined
+                  }
                 >
-                  <RefreshCw size={14} />
-                  {resyncMutation.isPending ? "读取中…" : "重新从链上读取"}
-                </Button>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={startResync}
+                    disabled={busy || current.scope === "global"}
+                  >
+                    <RefreshCw size={14} />
+                    {resyncMutation.isPending ? "读取中…" : "重新从链上读取"}
+                  </Button>
+                </span>
               )}
             </div>
           </div>
