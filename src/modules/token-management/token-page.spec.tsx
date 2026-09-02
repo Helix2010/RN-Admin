@@ -292,15 +292,13 @@ describe("TokenPage list", () => {
     expect(within(usdt).getByText("18 位 · 展示 2 位")).toBeTruthy();
     expect(within(usdt).getByText("全局")).toBeTruthy();
     expect(within(usdt).getByText("已启用")).toBeTruthy();
-    expect(within(usdt).queryByText(/不在 App 客户端白名单内/)).toBeNull();
+    expect(within(usdt).queryByText(/不在 App 内置的主流合约表中/)).toBeNull();
 
     const cake = screen.getByTestId("token-row-40");
     expect(within(cake).getByText("本租户")).toBeTruthy();
     expect(within(cake).getByText("已停用")).toBeTruthy();
     expect(
-      within(cake).getByText(
-        "不在 App 客户端白名单内，用户转出时会看到未验证警示",
-      ),
+      within(cake).getByText(/不在 App 内置的主流合约表中：App 不显示美元估值/),
     ).toBeTruthy();
 
     // 全局行不能删除，只能停用；租户行可以删
@@ -551,7 +549,7 @@ describe("TokenPage add token", () => {
     const decimals = screen.getByLabelText("Decimals") as HTMLInputElement;
     expect(decimals.value).toBe("6");
     expect(decimals.readOnly).toBe(true);
-    expect(screen.getByText(/^在 App 客户端白名单内/)).toBeTruthy();
+    expect(screen.getByText(/^在 App 内置的主流合约表中/)).toBeTruthy();
     const name = screen.getByRole("textbox", { name: /^名称/ });
     expect((name as HTMLInputElement).disabled).toBe(false);
     await user.clear(name);

@@ -517,8 +517,9 @@ function ChainTokenCard({
                         </div>
                       </div>
                       {token.allowlisted ? null : (
-                        <small className="token-warning">
-                          不在 App 客户端白名单内，用户转出时会看到未验证警示
+                        <small className="secondary-value">
+                          不在 App 内置的主流合约表中：App
+                          不显示美元估值，转出一律要求验证
                         </small>
                       )}
                     </td>
@@ -1027,15 +1028,17 @@ function CreateTokenPanel({
               </label>
               {preview.allowlisted ? (
                 <p className="section-caption">
-                  在 App 客户端白名单内，用户转出时不会看到未验证警示。
+                  在 App
+                  内置的主流合约表中：显示美元估值，按大额阈值决定是否要求验证。
                 </p>
               ) : (
                 <div className="draft-help-banner" role="note">
-                  <strong>不在 App 客户端白名单内。</strong>
+                  <strong>不在 App 内置的主流合约表中。</strong>
                   <span>
                     加入目录后 App
-                    会显示它，但用户转出时会看到未验证警示；白名单随 App
-                    版本内置，不能在这里修改。
+                    正常显示与转出，不显示美元估值，转出一律要求验证；
+                    只有当符号与某个主流代币相同而合约地址不同时，App
+                    才会提醒用户核对合约地址。
                   </span>
                 </div>
               )}
