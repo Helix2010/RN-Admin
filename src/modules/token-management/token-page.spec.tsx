@@ -204,7 +204,7 @@ function tokenList(): TokenList {
       name: "PancakeSwap Token",
       decimals: 18,
       displayDecimals: 4,
-      logoColor: "",
+      logoColor: "#D1884F",
       sortWeight: 10,
       enabled: false,
       allowlisted: false,
@@ -529,6 +529,11 @@ describe("TokenPage add token", () => {
     expect(screen.getByText(/只影响显示，不参与金额换算/)).toBeTruthy();
     await user.clear(display);
     await user.type(display, "8");
+    // 图标颜色是必填项
+    await user.type(
+      screen.getByRole("textbox", { name: "图标颜色" }),
+      "#2775CA",
+    );
     await user.type(
       screen.getByRole("textbox", { name: /修改原因/ }),
       "上线 USDC 交易对",
@@ -551,6 +556,7 @@ describe("TokenPage add token", () => {
       chain: "eth",
       contractAddress: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       displayDecimals: 2,
+      logoColor: "#2775CA",
       name: "USD Coin (Ethereum)",
       enabled: true,
       sortWeight: 0,

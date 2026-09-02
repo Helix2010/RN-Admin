@@ -257,7 +257,9 @@ export const tokenSchema = z.looseObject({
   name: z.string(),
   decimals: z.number().int().min(0).max(36),
   displayDecimals: z.number().int().min(0),
-  logoColor: z.string().default(""),
+  logoColor: z
+    .string()
+    .regex(/^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/),
   sortWeight: z.number().int().default(0),
   enabled: z.boolean(),
   // 服务端按内置白名单判断。缺省时按"不在白名单"处理：宁可多提示一次，
@@ -337,8 +339,8 @@ export type TokenCreateInput = {
   chain: string;
   contractAddress: string;
   displayDecimals: number;
+  logoColor: string;
   name?: string;
-  logoColor?: string;
   sortWeight?: number;
   enabled?: boolean;
   reason: string;

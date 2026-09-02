@@ -513,9 +513,7 @@ function ChainTokenCard({
                           className="token-color"
                           aria-hidden="true"
                           style={{
-                            background: hexColorPattern.test(token.logoColor)
-                              ? token.logoColor
-                              : "var(--line)",
+                            background: token.logoColor,
                           }}
                         />
                         <div>
@@ -569,14 +567,25 @@ function ChainTokenCard({
                           <Edit3 size={14} />
                           编辑
                         </Button>
-                        <Button
-                          variant="ghost"
-                          type="button"
-                          aria-label={`${token.enabled ? "停用" : "启用"} ${token.symbol}`}
-                          onClick={() => onToggle(token)}
+                        <span
+                          title={
+                            token.address === "native" && token.enabled
+                              ? "原生币不能停用：要停用它，请在钱包配置里关闭这条链"
+                              : undefined
+                          }
                         >
-                          {token.enabled ? "停用" : "启用"}
-                        </Button>
+                          <Button
+                            variant="ghost"
+                            type="button"
+                            aria-label={`${token.enabled ? "停用" : "启用"} ${token.symbol}`}
+                            disabled={
+                              token.address === "native" && token.enabled
+                            }
+                            onClick={() => onToggle(token)}
+                          >
+                            {token.enabled ? "停用" : "启用"}
+                          </Button>
+                        </span>
                         <span
                           title={
                             isGlobal
@@ -680,7 +689,7 @@ function ColorField({
       {error ? (
         <small className="field-error">{error}</small>
       ) : (
-        <small>App 里代币图标的底色，#RRGGBB 格式；留空使用默认色。</small>
+        <small>必填。App 里代币图标的底色，#RRGGBB 格式。</small>
       )}
     </label>
   );
@@ -803,8 +812,8 @@ function CreateTokenPanel({
       setSortWeightError("排序权重必须是整数。");
       ok = false;
     } else setSortWeightError("");
-    if (logoColor.trim() !== "" && !hexColorPattern.test(logoColor.trim())) {
-      setColorError("颜色应为 #RRGGBB 格式，例如 #26A17B。");
+    if (!hexColorPattern.test(logoColor.trim())) {
+      setColorError("图标颜色是必填项，#RRGGBB 格式，例如 #26A17B。");
       ok = false;
     } else setColorError("");
     if (reason.trim().length < minReasonLength) {
@@ -822,13 +831,13 @@ function CreateTokenPanel({
       chain,
       contractAddress: address.trim(),
       displayDecimals: Number(displayDecimals),
+      logoColor: logoColor.trim(),
       enabled,
       sortWeight: Number(sortWeight),
       reason: reason.trim(),
       expectedVersion,
     };
     if (name.trim() !== "") payload.name = name.trim();
-    if (logoColor.trim() !== "") payload.logoColor = logoColor.trim();
     createMutation.mutate(payload);
   };
 
@@ -1287,8 +1296,8 @@ function EditTokenPanel({
       setSortWeightError("排序权重必须是整数。");
       ok = false;
     } else setSortWeightError("");
-    if (logoColor.trim() !== "" && !hexColorPattern.test(logoColor.trim())) {
-      setColorError("颜色应为 #RRGGBB 格式，例如 #26A17B。");
+    if (!hexColorPattern.test(logoColor.trim())) {
+      setColorError("图标颜色是必填项，#RRGGBB 格式，例如 #26A17B。");
       ok = false;
     } else setColorError("");
     if (!reasonReady()) ok = false;
