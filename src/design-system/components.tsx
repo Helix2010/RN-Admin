@@ -193,6 +193,8 @@ export function StatusPill({ status }: { status: string }) {
     editing: "编辑中",
     configured: "已配置",
     required: "待配置",
+    enabled: "已启用",
+    disabled: "已停用",
     "production guard": "发布保护",
   };
   return (

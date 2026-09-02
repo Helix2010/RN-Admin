@@ -51,6 +51,8 @@ const catalog = [
     defaultRpcUrls: ["https://bsc-dataseed.bnbchain.org"],
     defaultExplorerUrl: "https://bscscan.com",
     testnet: false,
+    nativeSymbol: "BNB",
+    nativeDecimals: 18,
   },
   {
     id: "base",
@@ -59,6 +61,8 @@ const catalog = [
     defaultRpcUrls: ["https://mainnet.base.org"],
     defaultExplorerUrl: "https://basescan.org",
     testnet: false,
+    nativeSymbol: "ETH",
+    nativeDecimals: 18,
   },
   {
     id: "op-sepolia",
@@ -67,6 +71,8 @@ const catalog = [
     defaultRpcUrls: ["https://sepolia.optimism.io"],
     defaultExplorerUrl: "https://sepolia-optimism.etherscan.io",
     testnet: true,
+    nativeSymbol: "ETH",
+    nativeDecimals: 18,
   },
 ];
 

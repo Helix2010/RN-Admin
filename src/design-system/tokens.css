@@ -999,12 +999,14 @@ p {
   text-transform: capitalize;
 }
 .status-active,
-.status-configured {
+.status-configured,
+.status-enabled {
   color: #11734f;
   background: #dcf5e9;
 }
 .status-paused,
-.status-required {
+.status-required,
+.status-disabled {
   color: #925900;
   background: #fff0d1;
 }
@@ -2687,12 +2689,14 @@ tr:hover td {
   background: #23334a;
 }
 [data-theme="dark"] .status-active,
-[data-theme="dark"] .status-configured {
+[data-theme="dark"] .status-configured,
+[data-theme="dark"] .status-enabled {
   color: #8bf0c5;
   background: rgba(40, 137, 102, 0.22);
 }
 [data-theme="dark"] .status-paused,
-[data-theme="dark"] .status-required {
+[data-theme="dark"] .status-required,
+[data-theme="dark"] .status-disabled {
   color: #ffd98d;
   background: rgba(193, 132, 35, 0.2);
 }
@@ -2717,6 +2721,137 @@ tr:hover td {
   border-radius: 50%;
   background: var(--brand);
   box-shadow: 0 0 0 4px rgba(116, 167, 255, 0.12);
+}
+/* 代币管理：按链分组的目录表、三步添加表单、只读字段与链上重读对比 */
+.token-page {
+  display: grid;
+  gap: 18px;
+}
+.token-chain-card .card-header h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.token-table {
+  min-width: 860px;
+}
+.token-table th:last-child,
+.token-table td:last-child {
+  text-align: right;
+}
+.token-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.token-identity strong {
+  font-size: 14px;
+}
+.token-color {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--panel);
+}
+.token-warning {
+  display: block;
+  margin-top: 6px;
+  color: var(--warning);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.token-address {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.token-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.token-row-actions .button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.token-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.token-steps li {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.token-steps li strong {
+  display: block;
+  color: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.token-steps li.is-done {
+  color: var(--success);
+  border-color: rgba(22, 129, 90, 0.35);
+}
+.token-steps li.is-active {
+  color: var(--brand-strong);
+  border-color: var(--brand);
+  background: var(--icon-bg);
+}
+.token-readonly-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.token-readonly-grid .form-field .input:disabled {
+  color: var(--muted);
+  background: var(--table-head);
+  cursor: not-allowed;
+}
+.token-readonly-note {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.token-inline-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.token-diff-table {
+  width: 100%;
+  font-size: 12px;
+}
+.token-diff-table th,
+.token-diff-table td {
+  padding: 8px 10px;
+}
+.token-diff-table td.is-changed {
+  color: var(--danger);
+  font-weight: 650;
 }
 @media (max-width: 1180px) {
   body {
@@ -2943,5 +3078,10 @@ tr:hover td {
   }
   .share-dialog-details {
     width: 100%;
+  }
+  .token-steps,
+  .token-readonly-grid,
+  .token-inline-fields {
+    grid-template-columns: 1fr;
   }
 }

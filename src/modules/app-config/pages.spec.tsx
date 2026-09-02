@@ -142,6 +142,8 @@ function configView(): AppConfig {
           defaultRpcUrls: ["https://bsc-dataseed.bnbchain.org"],
           defaultExplorerUrl: "https://bscscan.com",
           testnet: false,
+          nativeSymbol: "BNB",
+          nativeDecimals: 18,
         },
       ],
     },

@@ -44,6 +44,8 @@ function catalogFrom(view: AppConfig): WalletCatalogEntry[] {
     defaultExplorerUrl: "",
     // 老服务端没有目录，无从判断是不是测试网，按主网处理最保守
     testnet: false,
+    nativeSymbol: "",
+    nativeDecimals: 18,
   }));
 }
 

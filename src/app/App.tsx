@@ -5,6 +5,7 @@ import {
   Menu,
   ChevronRight,
   CircleHelp,
+  Coins,
   LayoutDashboard,
   LogOut,
   Settings2,
@@ -24,6 +25,7 @@ import {
 } from "../plugin-system/registry";
 import { releaseManagementPlugin } from "../modules/release-management/plugin";
 import { appConfigPlugin } from "../modules/app-config/plugin";
+import { tokenManagementPlugin } from "../modules/token-management/plugin";
 import { auditPlugin } from "../modules/audit/plugin";
 import { distributionSettingsPlugin } from "../modules/release-storage/plugin";
 import {
@@ -37,6 +39,7 @@ import { LoginPage } from "./LoginPage";
 
 registerAdminPlugin(releaseManagementPlugin);
 registerAdminPlugin(appConfigPlugin);
+registerAdminPlugin(tokenManagementPlugin);
 registerAdminPlugin(auditPlugin);
 registerAdminPlugin(distributionSettingsPlugin);
 
@@ -69,6 +72,7 @@ const iconMap = {
   smartphone: Smartphone,
   bell: Bell,
   wallet: Wallet,
+  coins: Coins,
 };
 
 export function App() {

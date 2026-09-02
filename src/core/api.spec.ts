@@ -193,6 +193,194 @@ describe("adminApi.config", () => {
   });
 });
 
+describe("adminApi tokens", () => {
+  const fetchMock = () => vi.mocked(globalThis.fetch);
+  function stubJson(body: unknown, status = 200) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+  }
+  const usdt = {
+    id: 12,
+    scope: "global",
+    chain: "bsc",
+    address: "0x55d398326f99059fF775485246999027B3197955",
+    symbol: "USDT",
+    name: "Tether USD",
+    decimals: 18,
+    displayDecimals: 2,
+    logoColor: "#26A17B",
+    sortWeight: 100,
+    enabled: true,
+    allowlisted: true,
+    metadataSyncedAt: "2026-09-02T01:00:00.000Z",
+    updatedAt: "2026-09-02T01:00:00.000Z",
+  };
+
+  it("parses the merged token list and keeps the database version", async () => {
+    stubJson({
+      tokens: [
+        usdt,
+        {
+          // native 行没有链上元数据；老字段缺省时也要能过 schema
+          id: 1,
+          scope: "global",
+          chain: "bsc",
+          address: "native",
+          symbol: "BNB",
+          name: "BNB",
+          decimals: 18,
+          displayDecimals: 4,
+          logoColor: "#F0B90B",
+          sortWeight: 1000,
+          enabled: true,
+          metadataSyncedAt: null,
+          updatedAt: "2026-09-02T01:00:00.000Z",
+          extra: "passes through",
+        },
+      ],
+      metadata: { databaseVersion: 12 },
+    });
+
+    const result = await adminApi.listTokens("bsc");
+
+    expect(fetchMock().mock.calls[0]?.[0]).toBe(
+      "http://localhost:3000/v1/admin/tokens?chain=bsc",
+    );
+    expect(result.metadata.databaseVersion).toBe(12);
+    expect(result.tokens[0]).toMatchObject({
+      symbol: "USDT",
+      decimals: 18,
+      displayDecimals: 2,
+      allowlisted: true,
+      metadataSyncedAt: "2026-09-02T01:00:00.000Z",
+    });
+    const native = result.tokens[1];
+    expect(native?.metadataSyncedAt).toBeNull();
+    // 缺省按"不在白名单"处理：宁可多提示，也不让运营以为用户看不到未验证警示
+    expect(native?.allowlisted).toBe(false);
+    expect((native as Record<string, unknown> | undefined)?.extra).toBe(
+      "passes through",
+    );
+  });
+
+  it("rejects a token whose decimals are outside 0-36", async () => {
+    stubJson({
+      tokens: [{ ...usdt, decimals: 40 }],
+      metadata: { databaseVersion: 12 },
+    });
+
+    await expect(adminApi.listTokens()).rejects.toThrow();
+  });
+
+  it("returns preview data with exists defaulting to null", async () => {
+    stubJson({
+      chain: "bsc",
+      contractAddress: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      symbol: "USDC",
+      name: "USD Coin",
+      decimals: 18,
+      allowlisted: true,
+    });
+
+    const preview = await adminApi.previewToken({
+      chain: "bsc",
+      contractAddress: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+    });
+
+    expect(preview.exists).toBeNull();
+    expect(preview.decimals).toBe(18);
+    const [, init] = fetchMock().mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      chain: "bsc",
+      contractAddress: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+    });
+  });
+
+  it("sends reason and expectedVersion in the DELETE body", async () => {
+    stubJson({ metadata: { databaseVersion: 13 } });
+
+    const result = await adminApi.deleteToken(40, {
+      reason: "租户不再支持",
+      expectedVersion: 12,
+    });
+
+    expect(result.metadata.databaseVersion).toBe(13);
+    const [url, init] = fetchMock().mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/v1/admin/tokens/40");
+    expect(init.method).toBe("DELETE");
+    expect(JSON.parse(String(init.body))).toEqual({
+      reason: "租户不再支持",
+      expectedVersion: 12,
+    });
+  });
+
+  it("parses the three resync outcomes", async () => {
+    stubJson({
+      changed: true,
+      current: { symbol: "USDT", decimals: 18 },
+      onchain: { symbol: "USDT", decimals: 6 },
+    });
+    const diff = await adminApi.resyncToken(12, {
+      reason: "核对链上精度",
+      expectedVersion: 12,
+      confirm: false,
+    });
+    expect(diff.changed).toBe(true);
+    expect("onchain" in diff && diff.onchain.decimals).toBe(6);
+
+    stubJson({ changed: false, token: usdt });
+    const same = await adminApi.resyncToken(12, {
+      reason: "核对链上精度",
+      expectedVersion: 12,
+    });
+    expect(same.changed).toBe(false);
+
+    stubJson({
+      changed: true,
+      token: { ...usdt, decimals: 6 },
+      metadata: { databaseVersion: 13 },
+    });
+    const written = await adminApi.resyncToken(12, {
+      reason: "核对链上精度",
+      expectedVersion: 12,
+      confirm: true,
+    });
+    expect("token" in written && written.token.decimals).toBe(6);
+  });
+
+  it("surfaces the problem code so pages can explain chain errors", async () => {
+    stubJson(
+      {
+        type: "about:blank",
+        title: "Bad Request",
+        status: 400,
+        code: "TOKEN_NOT_A_CONTRACT",
+        detail: "no code at address",
+      },
+      400,
+    );
+
+    await expect(
+      adminApi.previewToken({
+        chain: "bsc",
+        contractAddress: "0x0000000000000000000000000000000000000001",
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "TOKEN_NOT_A_CONTRACT",
+      message: "no code at address",
+    });
+  });
+});
+
 function palette() {
   return {
     primary: "#3157D5",

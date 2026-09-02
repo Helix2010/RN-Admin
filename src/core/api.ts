@@ -237,7 +237,112 @@ const walletCatalogEntrySchema = z.looseObject({
   defaultExplorerUrl: z.string().default(""),
   // 老服务端不下发这个标记时按主网处理
   testnet: z.boolean().default(false),
+  // 原生币的符号与精度（代币目录按链分组时显示）；老服务端不下发时留空
+  nativeSymbol: z.string().default(""),
+  nativeDecimals: z.number().int().default(18),
 });
+
+/**
+ * 代币目录里的一行（管理端合并视图）：`scope` 区分平台全局行与本租户的行。
+ *
+ * symbol / decimals 由服务端读链回填，管理端只展示；displayDecimals 只影响显示。
+ */
+export const tokenSchema = z.looseObject({
+  id: z.number().int(),
+  scope: z.enum(["global", "tenant"]),
+  chain: z.string(),
+  // "native" 或 EIP-55 校验和形式的合约地址
+  address: z.string(),
+  symbol: z.string(),
+  name: z.string(),
+  decimals: z.number().int().min(0).max(36),
+  displayDecimals: z.number().int().min(0),
+  logoColor: z.string().default(""),
+  sortWeight: z.number().int().default(0),
+  enabled: z.boolean(),
+  // 服务端按内置白名单判断。缺省时按"不在白名单"处理：宁可多提示一次，
+  // 也不要让运营以为用户转出时不会看到未验证警示
+  allowlisted: z.boolean().default(false),
+  // native 行没有链上元数据，为 null
+  metadataSyncedAt: z.string().nullable().default(null),
+  updatedAt: z.string(),
+});
+export type Token = z.infer<typeof tokenSchema>;
+export type TokenScope = Token["scope"];
+
+/** preview 只读链、不入库：返回链上元数据与目录里是否已有同一代币。 */
+export const tokenPreviewSchema = z.looseObject({
+  chain: z.string(),
+  contractAddress: z.string(),
+  symbol: z.string(),
+  name: z.string(),
+  decimals: z.number().int().min(0).max(36),
+  allowlisted: z.boolean().default(false),
+  exists: z
+    .object({ id: z.number().int(), scope: z.enum(["global", "tenant"]) })
+    .nullable()
+    .default(null),
+});
+export type TokenPreview = z.infer<typeof tokenPreviewSchema>;
+
+const tokenMetadataSchema = z.object({
+  databaseVersion: z.number().int().nonnegative(),
+});
+const tokenListSchema = z.object({
+  tokens: z.array(tokenSchema),
+  metadata: tokenMetadataSchema,
+});
+export type TokenList = z.infer<typeof tokenListSchema>;
+const tokenMutationSchema = z.object({
+  token: tokenSchema,
+  metadata: tokenMetadataSchema,
+});
+const tokenOnchainPairSchema = z.object({
+  symbol: z.string(),
+  decimals: z.number().int(),
+});
+/**
+ * resync 三种结果：与库中一致（不写入）；有差异但未确认（不写入，带新旧值）；
+ * 已确认写入（带更新后的行与新版本号）。
+ */
+const tokenResyncSchema = z.union([
+  z.object({
+    changed: z.literal(false),
+    token: tokenSchema,
+    metadata: tokenMetadataSchema.optional(),
+  }),
+  z.object({
+    changed: z.literal(true),
+    token: tokenSchema,
+    metadata: tokenMetadataSchema,
+  }),
+  z.object({
+    changed: z.literal(true),
+    current: tokenOnchainPairSchema,
+    onchain: tokenOnchainPairSchema,
+  }),
+]);
+export type TokenResyncResult = z.infer<typeof tokenResyncSchema>;
+export type TokenCreateInput = {
+  chain: string;
+  contractAddress: string;
+  displayDecimals: number;
+  name?: string;
+  logoColor?: string;
+  sortWeight?: number;
+  enabled?: boolean;
+  reason: string;
+  expectedVersion: number;
+};
+export type TokenUpdateInput = {
+  name?: string;
+  displayDecimals?: number;
+  logoColor?: string;
+  sortWeight?: number;
+  enabled?: boolean;
+  reason: string;
+  expectedVersion: number;
+};
 
 export const managedAppConfigSchema = z.looseObject({
   configVersion: z.string().trim().min(1),
@@ -577,6 +682,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** 服务端 problem+json 里的 code（如 TOKEN_NOT_A_CONTRACT），没有时为空 */
+    readonly code: string = "",
   ) {
     super(message);
     this.name = "ApiError";
@@ -601,6 +708,7 @@ async function request<T>(
       title?: string;
       detail?: string;
       message?: string;
+      code?: string;
     } | null;
     throw new ApiError(
       problem?.detail ??
@@ -608,6 +716,7 @@ async function request<T>(
         problem?.title ??
         `管理接口请求失败 (${response.status})`,
       response.status,
+      typeof problem?.code === "string" ? problem.code : "",
     );
   }
   return schema.parse(await response.json());
@@ -911,6 +1020,50 @@ export const adminApi = {
         localization: localizationViewSchema,
       }),
       { method: "POST", body: JSON.stringify({ languages, reason }) },
+    ),
+  /** 代币目录合并视图：全局行 + 本租户行；同 (chain,address) 只出现租户行。 */
+  listTokens: (chain?: string) =>
+    request(
+      `/v1/admin/tokens${chain ? `?chain=${encodeURIComponent(chain)}` : ""}`,
+      tokenListSchema,
+    ),
+  /** 只读链、不入库：添加表单第二步用它取 symbol / decimals。 */
+  previewToken: (payload: { chain: string; contractAddress: string }) =>
+    request("/v1/admin/tokens/preview", tokenPreviewSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  // 请求体里没有 symbol / decimals：服务端重新读链回填，不信任 preview 的结果
+  createToken: (payload: TokenCreateInput) =>
+    request("/v1/admin/tokens", tokenMutationSchema, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateToken: (id: number, payload: TokenUpdateInput) =>
+    request(
+      `/v1/admin/tokens/${encodeURIComponent(String(id))}`,
+      tokenMutationSchema,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    ),
+  /** confirm 为 false 时只比对不写入；有差异经运营确认后再以 confirm: true 写入。 */
+  resyncToken: (
+    id: number,
+    payload: { reason: string; expectedVersion: number; confirm?: boolean },
+  ) =>
+    request(
+      `/v1/admin/tokens/${encodeURIComponent(String(id))}/resync`,
+      tokenResyncSchema,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  // 软删除也要 reason 与 expectedVersion，所以 DELETE 带 JSON body
+  deleteToken: (
+    id: number,
+    payload: { reason: string; expectedVersion: number },
+  ) =>
+    request(
+      `/v1/admin/tokens/${encodeURIComponent(String(id))}`,
+      z.object({ metadata: tokenMetadataSchema }),
+      { method: "DELETE", body: JSON.stringify(payload) },
     ),
   audits: (tenantId: string) => {
     void tenantId;
