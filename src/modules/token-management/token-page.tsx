@@ -17,6 +17,8 @@ import {
   ConfirmDialog,
   EmptyState,
   FeedbackNotice,
+  FormValidationSummary,
+  focusFirstInvalidField,
   SelectField,
   SidePanel,
   StatusPill,
@@ -406,6 +408,7 @@ export function TokenPage({ tenantId }: AdminPageProps) {
             <label className="form-field save-reason-field">
               <span>修改原因</span>
               <textarea
+                id="token-row-reason"
                 className="input textarea"
                 aria-invalid={Boolean(rowReasonError)}
                 aria-describedby={
@@ -430,6 +433,19 @@ export function TokenPage({ tenantId }: AdminPageProps) {
                 <small>{reasonHint}</small>
               )}
             </label>
+            <FormValidationSummary
+              errors={
+                rowReasonError
+                  ? [
+                      {
+                        field: "修改原因",
+                        message: rowReasonError,
+                        targetId: "token-row-reason",
+                      },
+                    ]
+                  : []
+              }
+            />
           </>
         ) : null}
       </ConfirmDialog>
@@ -630,6 +646,7 @@ function ReasonField({
     <label className="form-field save-reason-field">
       <span>修改原因</span>
       <textarea
+        id={id}
         className="input textarea"
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${id}-error` : undefined}
@@ -652,11 +669,13 @@ function ColorField({
   value,
   error,
   errorId,
+  inputId,
   onChange,
 }: {
   value: string;
   error: string;
   errorId: string;
+  inputId: string;
   onChange: (value: string) => void;
 }) {
   const valid = hexColorPattern.test(value.trim());
@@ -674,6 +693,7 @@ function ColorField({
           />
         </span>
         <input
+          id={inputId}
           className="input mono"
           aria-label="图标颜色"
           aria-invalid={Boolean(error)}
@@ -692,16 +712,6 @@ function ColorField({
       )}
     </label>
   );
-}
-
-function focusFirstInvalidField() {
-  window.setTimeout(() => {
-    const firstInvalid = document.querySelector<HTMLElement>(
-      '.side-panel [aria-invalid="true"]',
-    );
-    firstInvalid?.focus();
-    firstInvalid?.scrollIntoView?.({ block: "center", behavior: "smooth" });
-  }, 0);
 }
 
 /** 展示精度：只影响显示，上限是代币精度。返回错误文案，合法时为空串。 */
@@ -750,9 +760,38 @@ function CreateTokenPanel({
   const [reasonError, setReasonError] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [validationSummary, setValidationSummary] = useState("");
 
   const selectedChain = catalog.find((item) => item.id === chain);
+  const validationErrors = [
+    displayDecimalsError
+      ? {
+          field: "展示精度",
+          message: displayDecimalsError,
+          targetId: "token-create-display-decimals",
+        }
+      : null,
+    sortWeightError
+      ? {
+          field: "排序权重",
+          message: sortWeightError,
+          targetId: "token-create-sort-weight",
+        }
+      : null,
+    colorError
+      ? {
+          field: "图标颜色",
+          message: colorError,
+          targetId: "token-create-color",
+        }
+      : null,
+    reasonError
+      ? {
+          field: "修改原因",
+          message: reasonError,
+          targetId: "token-create-reason",
+        }
+      : null,
+  ].filter((error): error is NonNullable<typeof error> => error !== null);
   const previewMutation = useMutation({
     mutationFn: (payload: { chain: string; contractAddress: string }) =>
       adminApi.previewToken(payload),
@@ -808,7 +847,6 @@ function CreateTokenPanel({
     setSortWeightError("");
     setLogoColor("");
     setEnabled(true);
-    setValidationSummary("");
   };
   const submit = () => {
     if (!preview) return;
@@ -832,11 +870,9 @@ function CreateTokenPanel({
       ok = false;
     } else setReasonError("");
     if (!ok) {
-      setValidationSummary("请修正表单中的错误后再添加。错误字段已标记。");
       focusFirstInvalidField();
       return;
     }
-    setValidationSummary("");
     setSubmitError("");
     setConfirmOpen(true);
   };
@@ -1057,6 +1093,7 @@ function CreateTokenPanel({
                 <label className="form-field">
                   <span>展示精度（位）</span>
                   <input
+                    id="token-create-display-decimals"
                     className="input token-number-input"
                     type="number"
                     inputMode="numeric"
@@ -1073,7 +1110,6 @@ function CreateTokenPanel({
                     onChange={(event) => {
                       setDisplayDecimals(event.target.value);
                       if (displayDecimalsError) setDisplayDecimalsError("");
-                      if (validationSummary) setValidationSummary("");
                     }}
                   />
                   {displayDecimalsError ? (
@@ -1093,6 +1129,7 @@ function CreateTokenPanel({
                 <label className="form-field">
                   <span>排序权重（整数）</span>
                   <input
+                    id="token-create-sort-weight"
                     className="input token-number-input"
                     type="number"
                     inputMode="numeric"
@@ -1107,7 +1144,6 @@ function CreateTokenPanel({
                     onChange={(event) => {
                       setSortWeight(event.target.value);
                       if (sortWeightError) setSortWeightError("");
-                      if (validationSummary) setValidationSummary("");
                     }}
                   />
                   {sortWeightError ? (
@@ -1128,10 +1164,10 @@ function CreateTokenPanel({
                 value={logoColor}
                 error={colorError}
                 errorId="token-create-color-error"
+                inputId="token-create-color"
                 onChange={(value) => {
                   setLogoColor(value);
                   if (colorError) setColorError("");
-                  if (validationSummary) setValidationSummary("");
                 }}
               />
               <label className="switch-row">
@@ -1154,19 +1190,16 @@ function CreateTokenPanel({
                 onChange={(value) => {
                   setReason(value);
                   if (reasonError) setReasonError("");
-                  if (validationSummary) setValidationSummary("");
                 }}
+              />
+              <FormValidationSummary
+                errors={validationErrors}
+                title="请修正表单中的错误后再添加。"
               />
               <FeedbackNotice
                 kind="error"
                 message={submitError ? `添加失败：${submitError}` : ""}
                 onDismiss={() => setSubmitError("")}
-              />
-              <FeedbackNotice
-                kind="error"
-                message={validationSummary}
-                onDismiss={() => setValidationSummary("")}
-                placement="viewport"
               />
             </>
           ) : null}
@@ -1246,6 +1279,36 @@ function EditTokenPanel({
   } | null>(null);
   const [submitError, setSubmitError] = useState("");
   const [notice, setNotice] = useState("");
+  const validationErrors = [
+    displayDecimalsError
+      ? {
+          field: "展示精度",
+          message: displayDecimalsError,
+          targetId: "token-edit-display-decimals",
+        }
+      : null,
+    sortWeightError
+      ? {
+          field: "排序权重",
+          message: sortWeightError,
+          targetId: "token-edit-sort-weight",
+        }
+      : null,
+    colorError
+      ? {
+          field: "图标颜色",
+          message: colorError,
+          targetId: "token-edit-color",
+        }
+      : null,
+    reasonError
+      ? {
+          field: "修改原因",
+          message: reasonError,
+          targetId: "token-edit-reason",
+        }
+      : null,
+  ].filter((error): error is NonNullable<typeof error> => error !== null);
 
   const isNative = current.address === "native";
   const resyncMutation = useMutation({
@@ -1351,7 +1414,10 @@ function EditTokenPanel({
       ok = false;
     } else setColorError("");
     if (!reasonReady()) ok = false;
-    if (!ok) return;
+    if (!ok) {
+      focusFirstInvalidField();
+      return;
+    }
     if (changedFields(changes()).length === 0) {
       setSubmitError("没有需要保存的修改。");
       return;
@@ -1486,6 +1552,7 @@ function EditTokenPanel({
             <label className="form-field">
               <span>展示精度</span>
               <input
+                id="token-edit-display-decimals"
                 className="input"
                 type="number"
                 min={0}
@@ -1520,6 +1587,7 @@ function EditTokenPanel({
             <label className="form-field">
               <span>排序权重</span>
               <input
+                id="token-edit-sort-weight"
                 className="input"
                 type="number"
                 step={1}
@@ -1549,6 +1617,7 @@ function EditTokenPanel({
             value={logoColor}
             error={colorError}
             errorId="token-edit-color-error"
+            inputId="token-edit-color"
             onChange={(value) => {
               setLogoColor(value);
               if (colorError) setColorError("");
@@ -1576,6 +1645,7 @@ function EditTokenPanel({
               if (reasonError) setReasonError("");
             }}
           />
+          <FormValidationSummary errors={validationErrors} />
           <FeedbackNotice
             kind="error"
             message={submitError}

@@ -1,8 +1,25 @@
 import { LayoutDashboard, Rocket } from "lucide-react";
-import { DashboardPage, ReleaseManagementPage } from "./pages";
-import { InstallationsPage } from "./installations-page";
-import { PushEventsPage } from "./push-events-page";
+import { lazy } from "react";
 import type { AdminPlugin } from "../../plugin-system/types";
+
+const DashboardPage = lazy(() =>
+  import("./pages").then(({ DashboardPage: page }) => ({ default: page })),
+);
+const ReleaseManagementPage = lazy(() =>
+  import("./pages").then(({ ReleaseManagementPage: page }) => ({
+    default: page,
+  })),
+);
+const InstallationsPage = lazy(() =>
+  import("./installations-page").then(({ InstallationsPage: page }) => ({
+    default: page,
+  })),
+);
+const PushEventsPage = lazy(() =>
+  import("./push-events-page").then(({ PushEventsPage: page }) => ({
+    default: page,
+  })),
+);
 
 export const releaseManagementPlugin: AdminPlugin = {
   id: "release-management",

@@ -1187,14 +1187,20 @@ tr:hover td {
   outline: none;
   appearance: none;
   background: var(--input);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
   transition:
     border-color 140ms ease,
     box-shadow 140ms ease,
-    background 140ms ease;
+    background 140ms ease,
+    transform 140ms ease;
 }
 .select-control select:hover:not(:disabled) {
   border-color: var(--brand);
   background: var(--hover);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--brand) 10%, transparent);
 }
 .select-control select:focus {
   border-color: var(--brand);
@@ -1210,6 +1216,9 @@ tr:hover td {
 }
 .select-control select:disabled {
   cursor: not-allowed;
+  opacity: 0.55;
+}
+.select-control select:disabled + svg {
   opacity: 0.55;
 }
 .file-dropzone {
@@ -1396,6 +1405,46 @@ tr:hover td {
   color: var(--error-text);
   font-size: 12px;
   line-height: 1.45;
+}
+.form-field :is(.input, .select):is([aria-invalid="true"]) {
+  border-color: var(--error-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--error-border) 18%, transparent);
+}
+.form-validation-summary {
+  display: grid;
+  gap: 7px;
+  padding: 12px 14px;
+  border: 1px solid var(--error-border);
+  border-radius: 10px;
+  color: var(--error-text);
+  background: var(--error-bg);
+  font-size: 12px;
+}
+.form-validation-summary-title {
+  font-weight: 700;
+}
+.form-validation-summary ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+}
+.form-validation-summary button {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.form-validation-summary button strong::after {
+  content: "：";
 }
 @keyframes feedback-notice-in {
   from {

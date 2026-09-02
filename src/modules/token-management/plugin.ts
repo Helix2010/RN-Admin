@@ -1,5 +1,9 @@
-import { TokenPage } from "./token-page";
+import { lazy } from "react";
 import type { AdminPlugin } from "../../plugin-system/types";
+
+const TokenPage = lazy(() =>
+  import("./token-page").then(({ TokenPage: page }) => ({ default: page })),
+);
 
 export const tokenManagementPlugin: AdminPlugin = {
   id: "token-management",

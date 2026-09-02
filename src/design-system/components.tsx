@@ -99,6 +99,7 @@ export function SelectField({
 
 export function FileDropzone({
   label,
+  id,
   file,
   accept,
   hint,
@@ -106,6 +107,7 @@ export function FileDropzone({
   onFileChange,
 }: {
   label: string;
+  id?: string;
   file: File | null;
   accept?: string;
   hint?: string;
@@ -123,6 +125,7 @@ export function FileDropzone({
   };
   return (
     <div
+      id={id}
       className={`file-dropzone${dragging ? " is-dragging" : ""}${file ? " has-file" : ""}${disabled ? " is-disabled" : ""}`}
       role="button"
       tabIndex={disabled ? -1 : 0}
@@ -266,6 +269,57 @@ export function FeedbackNotice({
     );
   }
   return notice;
+}
+
+export type FormValidationError = {
+  field: string;
+  message: string;
+  targetId: string;
+};
+
+export function focusFirstInvalidField(selector = '[aria-invalid="true"]') {
+  if (typeof document === "undefined") return;
+  window.setTimeout(() => {
+    const target = document.querySelector<HTMLElement>(selector);
+    target?.focus();
+    target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  }, 0);
+}
+
+export function FormValidationSummary({
+  errors,
+  title = "请修正表单中的错误后再继续。",
+}: {
+  errors: FormValidationError[];
+  title?: string;
+}) {
+  if (errors.length === 0) return null;
+  return (
+    <div className="form-validation-summary" role="alert" aria-live="assertive">
+      <div className="form-validation-summary-title">{title}</div>
+      <ul>
+        {errors.map((error) => (
+          <li key={error.targetId}>
+            <button
+              type="button"
+              aria-label={`${error.field}：${error.message}`}
+              onClick={() => {
+                const target = document.getElementById(error.targetId);
+                target?.focus();
+                target?.scrollIntoView?.({
+                  block: "center",
+                  behavior: "smooth",
+                });
+              }}
+            >
+              <strong>{error.field}</strong>
+              <span>{error.message}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function ConfirmDialog({

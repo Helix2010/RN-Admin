@@ -25,6 +25,9 @@ import {
   ConfirmDialog,
   EmptyState,
   FeedbackNotice,
+  type FormValidationError,
+  FormValidationSummary,
+  focusFirstInvalidField,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -177,6 +180,7 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
     kind: "error" | "success";
     message: string;
   } | null>(null);
+  const [configErrors, setConfigErrors] = useState<FormValidationError[]>([]);
 
   const mutation = useMutation({
     mutationFn: ({
@@ -236,6 +240,7 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
     setReasonError("");
     setSaveComposerOpen(false);
     setFeedback(null);
+    setConfigErrors([]);
   };
   const cancelEdit = () => {
     setDraft(null);
@@ -244,6 +249,7 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
     setReasonError("");
     setSaveComposerOpen(false);
     setFeedback(null);
+    setConfigErrors([]);
   };
   const updateDraft = (change: (next: ManagedAppConfig) => void) => {
     setDraft((current) => {
@@ -255,11 +261,14 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
   };
   const openSaveComposer = () => {
     if (!draft || draftVersion === null) return;
-    const error = validateConfig(draft);
-    if (error) {
-      setFeedback({ kind: "error", message: error });
+    const errors = validateConfigErrors(draft);
+    if (errors.length > 0) {
+      setConfigErrors(errors);
+      setFeedback(null);
+      focusFirstInvalidField(`#${errors[0]!.targetId}`);
       return;
     }
+    setConfigErrors([]);
     setFeedback(null);
     setReasonError("");
     setSaveComposerOpen(true);
@@ -267,6 +276,7 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
   const continueSave = () => {
     if (reason.trim().length < 3) {
       setReasonError("请填写至少 3 个字符的修改原因。");
+      focusFirstInvalidField('.save-composer [aria-invalid="true"]');
       return;
     }
     setReasonError("");
@@ -338,6 +348,7 @@ export function AppConfigPage({ tenantId }: AdminPageProps) {
           onContinueSave={continueSave}
           branding={brandingQuery.data}
           localization={localizationQuery.data}
+          validationErrors={configErrors}
         />
       ) : (
         <ConfigSummary data={data} branding={brandingQuery.data} />
@@ -486,6 +497,7 @@ function ConfigEditor({
   onContinueSave,
   branding,
   localization,
+  validationErrors,
 }: {
   draft: ManagedAppConfig;
   databaseVersion: number;
@@ -501,6 +513,7 @@ function ConfigEditor({
   onContinueSave: () => void;
   branding?: BrandingView;
   localization?: LocalizationView;
+  validationErrors: FormValidationError[];
 }) {
   const [previewMode, setPreviewMode] = useState<"light" | "dark">("light");
   const [previewLocale, setPreviewLocale] = useState(
@@ -525,6 +538,7 @@ function ConfigEditor({
   ]);
   return (
     <div className="config-editor">
+      <FormValidationSummary errors={validationErrors} />
       <Card>
         <div className="card-header">
           <div>
@@ -537,7 +551,13 @@ function ConfigEditor({
         <div className="card-body form-grid form-grid-3">
           <Field label="配置版本" hint="用于 App 缓存失效与问题定位">
             <input
+              id="app-config-configVersion"
               className="input"
+              aria-invalid={Boolean(
+                validationErrors.some(
+                  (error) => error.targetId === "app-config-configVersion",
+                ),
+              )}
               value={draft.configVersion}
               onChange={(event) =>
                 onChange((next) => {
@@ -548,11 +568,17 @@ function ConfigEditor({
           </Field>
           <Field label="缓存 TTL（秒）" hint="允许范围 30 - 86400">
             <input
+              id="app-config-ttlSeconds"
               className="input"
               type="number"
               min={30}
               max={86400}
               value={draft.ttlSeconds}
+              aria-invalid={Boolean(
+                validationErrors.some(
+                  (error) => error.targetId === "app-config-ttlSeconds",
+                ),
+              )}
               onChange={(event) =>
                 onChange((next) => {
                   next.ttlSeconds = Number(event.target.value);
@@ -562,9 +588,15 @@ function ConfigEditor({
           </Field>
           <Field label="状态页地址" hint="必须是 HTTPS/HTTP 完整 URL">
             <input
+              id="app-config-statusPageUrl"
               className="input"
               type="url"
               value={draft.support.statusPageUrl}
+              aria-invalid={Boolean(
+                validationErrors.some(
+                  (error) => error.targetId === "app-config-statusPageUrl",
+                ),
+              )}
               onChange={(event) =>
                 onChange((next) => {
                   next.support.statusPageUrl = event.target.value;
@@ -600,8 +632,14 @@ function ConfigEditor({
             hint="修改后建议同步递增版本号，便于 App 缓存失效"
           >
             <input
+              id="app-config-paletteVersion"
               className="input palette-version-input"
               value={draft.theme.paletteVersion}
+              aria-invalid={Boolean(
+                validationErrors.some(
+                  (error) => error.targetId === "app-config-paletteVersion",
+                ),
+              )}
               onChange={(event) =>
                 onChange((next) => {
                   next.theme.paletteVersion = event.target.value;
@@ -690,7 +728,15 @@ function ConfigEditor({
                         />
                       )}
                       <input
+                        id={`app-config-${previewMode}-${key}`}
                         className="input mono"
+                        aria-invalid={Boolean(
+                          validationErrors.some(
+                            (error) =>
+                              error.targetId ===
+                              `app-config-${previewMode}-${key}`,
+                          ),
+                        )}
                         aria-label={`${previewMode === "light" ? "浅色" : "深色"}${paletteLabels[key]}`}
                         value={draft.theme[previewMode][key]}
                         onChange={(event) =>
@@ -744,6 +790,7 @@ function ConfigEditor({
                   <small className="mono">modules.{key}</small>
                 </span>
                 <input
+                  id={`app-config-module-${key}`}
                   type="checkbox"
                   checked={draft.modules[key]}
                   disabled={
@@ -814,8 +861,15 @@ function ConfigEditor({
           <div className="card-body form-stack">
             <Field label="最低支持版本" hint="低于此版本会触发强制升级决策">
               <input
+                id="app-config-minSupportedVersion"
                 className="input"
                 value={draft.updatePolicy.minSupportedVersion}
+                aria-invalid={Boolean(
+                  validationErrors.some(
+                    (error) =>
+                      error.targetId === "app-config-minSupportedVersion",
+                  ),
+                )}
                 onChange={(event) =>
                   onChange((next) => {
                     next.updatePolicy.minSupportedVersion = event.target.value;
@@ -825,8 +879,14 @@ function ConfigEditor({
             </Field>
             <Field label="最新版本">
               <input
+                id="app-config-latestVersion"
                 className="input"
                 value={draft.updatePolicy.latestVersion}
+                aria-invalid={Boolean(
+                  validationErrors.some(
+                    (error) => error.targetId === "app-config-latestVersion",
+                  ),
+                )}
                 onChange={(event) =>
                   onChange((next) => {
                     next.updatePolicy.latestVersion = event.target.value;
@@ -836,6 +896,7 @@ function ConfigEditor({
             </Field>
             <Field label="OTA Channel">
               <input
+                id="app-config-otaChannel"
                 className="input"
                 value={draft.updatePolicy.otaChannel}
                 onChange={(event) =>
@@ -891,6 +952,7 @@ function ConfigEditor({
             <label className="form-field save-reason-field">
               <span>修改原因</span>
               <textarea
+                id="app-config-change-reason"
                 autoFocus
                 className="input textarea"
                 aria-invalid={Boolean(reasonError)}
@@ -912,6 +974,19 @@ function ConfigEditor({
                 <small>至少填写 3 个字符，将写入配置审计。</small>
               )}
             </label>
+            <FormValidationSummary
+              errors={
+                reasonError
+                  ? [
+                      {
+                        field: "修改原因",
+                        message: reasonError,
+                        targetId: "app-config-change-reason",
+                      },
+                    ]
+                  : []
+              }
+            />
             <div className="save-composer-footer">
               <span className="section-caption">
                 下一步仍会显示最终确认，不会立即提交。
@@ -1145,14 +1220,35 @@ function Field({
   );
 }
 
-function validateConfig(config: ManagedAppConfig): string | null {
+function validateConfigErrors(config: ManagedAppConfig): FormValidationError[] {
   const parsed = managedAppConfigSchema.safeParse(config);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return `请检查 ${issue.path.join(".") || "配置"}：${issue.message}`;
+    const path = issue.path.join(".");
+    const targets: Record<string, [string, string]> = {
+      configVersion: ["配置版本", "app-config-configVersion"],
+      ttlSeconds: ["缓存 TTL", "app-config-ttlSeconds"],
+      "support.statusPageUrl": ["状态页地址", "app-config-statusPageUrl"],
+      "theme.paletteVersion": ["调色板版本", "app-config-paletteVersion"],
+      "updatePolicy.minSupportedVersion": [
+        "最低支持版本",
+        "app-config-minSupportedVersion",
+      ],
+      "updatePolicy.latestVersion": ["最新版本", "app-config-latestVersion"],
+      "updatePolicy.otaChannel": ["OTA Channel", "app-config-otaChannel"],
+    };
+    const [field, targetId] =
+      targets[path] ?? ([path || "配置", "app-config-configVersion"] as const);
+    return [{ field, message: issue.message, targetId }];
   }
   if (!config.modules.predict && !config.modules.dex) {
-    return "预测市场和 DEX 兑换至少需要开启一个。";
+    return [
+      {
+        field: "业务模块",
+        message: "预测市场和 DEX 兑换至少需要开启一个。",
+        targetId: "app-config-module-predict",
+      },
+    ];
   }
   for (const mode of ["light", "dark"] as const) {
     for (const key of paletteKeys) {
@@ -1164,16 +1260,34 @@ function validateConfig(config: ManagedAppConfig): string | null {
             value,
           ));
       if (!valid) {
-        return `${mode === "light" ? "浅色" : "深色"}${paletteLabels[key]}必须使用 #RRGGBB${key === "backdrop" ? " 或 rgba(...)" : ""} 格式。`;
+        return [
+          {
+            field: `${mode === "light" ? "浅色" : "深色"}${paletteLabels[key]}`,
+            message: `必须使用 #RRGGBB${key === "backdrop" ? " 或 rgba(...)" : ""} 格式。`,
+            targetId: `app-config-${mode}-${key}`,
+          },
+        ];
       }
     }
   }
   const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
   if (!semver.test(config.updatePolicy.minSupportedVersion)) {
-    return "最低支持版本必须使用 SemVer，例如 1.2.0。";
+    return [
+      {
+        field: "最低支持版本",
+        message: "必须使用 SemVer，例如 1.2.0。",
+        targetId: "app-config-minSupportedVersion",
+      },
+    ];
   }
   if (!semver.test(config.updatePolicy.latestVersion)) {
-    return "最新版本必须使用 SemVer，例如 1.2.0。";
+    return [
+      {
+        field: "最新版本",
+        message: "必须使用 SemVer，例如 1.2.0。",
+        targetId: "app-config-latestVersion",
+      },
+    ];
   }
   if (
     compareVersions(
@@ -1181,9 +1295,15 @@ function validateConfig(config: ManagedAppConfig): string | null {
       config.updatePolicy.latestVersion,
     ) > 0
   ) {
-    return "最低支持版本不能高于最新版本。";
+    return [
+      {
+        field: "升级版本范围",
+        message: "最低支持版本不能高于最新版本。",
+        targetId: "app-config-latestVersion",
+      },
+    ];
   }
-  return null;
+  return [];
 }
 
 function compareVersions(left: string, right: string): number {

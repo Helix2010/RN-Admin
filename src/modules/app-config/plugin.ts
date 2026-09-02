@@ -1,9 +1,25 @@
 import { Settings2 } from "lucide-react";
-import { AppConfigPage } from "./pages";
-import { LocalizationPage } from "./localization-page";
-import { BrandingPage } from "./branding-page";
-import { WalletChainsPage } from "./wallet-page";
+import { lazy } from "react";
 import type { AdminPlugin } from "../../plugin-system/types";
+
+const AppConfigPage = lazy(() =>
+  import("./pages").then(({ AppConfigPage: page }) => ({ default: page })),
+);
+const LocalizationPage = lazy(() =>
+  import("./localization-page").then(({ LocalizationPage: page }) => ({
+    default: page,
+  })),
+);
+const BrandingPage = lazy(() =>
+  import("./branding-page").then(({ BrandingPage: page }) => ({
+    default: page,
+  })),
+);
+const WalletChainsPage = lazy(() =>
+  import("./wallet-page").then(({ WalletChainsPage: page }) => ({
+    default: page,
+  })),
+);
 export const appConfigPlugin: AdminPlugin = {
   id: "app-config",
   label: "应用配置",

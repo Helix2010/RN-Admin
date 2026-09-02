@@ -331,7 +331,9 @@ describe("TokenPage list", () => {
     const dialog = screen.getByRole("dialog", { name: "停用 USDT？" });
     // 不填原因不能提交
     await user.click(within(dialog).getByRole("button", { name: "确认停用" }));
-    expect(within(dialog).getByText(/至少 3 个字符/)).toBeTruthy();
+    expect(within(dialog).getAllByText(/至少 3 个字符/).length).toBeGreaterThan(
+      0,
+    );
     expect(apiMocks.updateToken).not.toHaveBeenCalled();
 
     await user.type(
@@ -513,7 +515,9 @@ describe("TokenPage add token", () => {
     expect(screen.getByRole("alert").textContent).toContain(
       "请修正表单中的错误后再添加",
     );
-    expect(screen.getByText("请填写至少 3 个字符的修改原因。")).toBeTruthy();
+    expect(
+      screen.getAllByText("请填写至少 3 个字符的修改原因。").length,
+    ).toBeGreaterThanOrEqual(1);
     await waitFor(() => expect(document.activeElement).toBe(reason));
     expect(apiMocks.createToken).not.toHaveBeenCalled();
   });
@@ -580,7 +584,9 @@ describe("TokenPage add token", () => {
       "上线 USDC 交易对",
     );
     await user.click(screen.getByRole("button", { name: "添加到目录" }));
-    expect(screen.getByText("展示精度不能超过代币精度 6 位。")).toBeTruthy();
+    expect(
+      screen.getAllByText("展示精度不能超过代币精度 6 位。").length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByRole("dialog", { name: "添加代币？" })).toBeNull();
     expect(apiMocks.createToken).not.toHaveBeenCalled();
 
@@ -656,7 +662,7 @@ describe("TokenPage edit token", () => {
     );
     await user.click(within(panel).getByRole("button", { name: "保存修改" }));
     expect(
-      within(panel).getByText("展示精度不能超过代币精度 18 位。"),
+      within(panel).getAllByText(/展示精度不能超过代币精度 18 位/).length,
     ).toBeTruthy();
     expect(apiMocks.updateToken).not.toHaveBeenCalled();
 
@@ -739,7 +745,9 @@ describe("TokenPage edit token", () => {
     await user.click(
       within(panel).getByRole("button", { name: "重新从链上读取" }),
     );
-    expect(within(panel).getByText(/至少 3 个字符/)).toBeTruthy();
+    expect(within(panel).getAllByText(/至少 3 个字符/).length).toBeGreaterThan(
+      0,
+    );
     expect(apiMocks.resyncToken).not.toHaveBeenCalled();
 
     await user.type(

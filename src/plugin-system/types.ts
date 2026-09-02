@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ComponentType, LazyExoticComponent } from "react";
 
 export type AdminPageProps = {
   onNavigate: (page: string) => void;
@@ -10,5 +10,9 @@ export type AdminPlugin = {
   label: string;
   icon: string;
   navigation: { id: string; label: string; icon: string }[];
-  pages: Record<string, ComponentType<AdminPageProps>>;
+  pages: Record<
+    string,
+    | ComponentType<AdminPageProps>
+    | LazyExoticComponent<ComponentType<AdminPageProps>>
+  >;
 };

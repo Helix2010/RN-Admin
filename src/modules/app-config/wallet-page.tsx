@@ -13,6 +13,9 @@ import {
   ConfirmDialog,
   EmptyState,
   FeedbackNotice,
+  FormValidationSummary,
+  focusFirstInvalidField,
+  type FormValidationError,
   StatusPill,
 } from "../../design-system/components";
 import type { AdminPageProps } from "../../plugin-system/types";
@@ -104,31 +107,43 @@ function chainClass(id: string): string {
 function walletProblems(
   draft: WalletDraft,
   catalog: WalletCatalogEntry[],
-): string[] {
-  const problems: string[] = [];
+): FormValidationError[] {
+  const problems: FormValidationError[] = [];
   const projectId = draft.walletConnectProjectId.trim();
   if (projectId !== "" && !projectIdPattern.test(projectId))
-    problems.push(
-      "Project ID 格式不对：应为 cloud.reown.com 上的 Project ID（16-64 位字母数字），不要填入完整链接。",
-    );
+    problems.push({
+      field: "Project ID",
+      message:
+        "格式不对：应为 cloud.reown.com 上的 Project ID（16-64 位字母数字），不要填入完整链接。",
+      targetId: "wallet-project-id",
+    });
   if (draft.enabled.size === 0)
-    problems.push("至少要启用一条链，否则 App 里的钱包无链可用。");
+    problems.push({
+      field: "启用链",
+      message: "至少要启用一条链，否则 App 里的钱包无链可用。",
+      targetId: "wallet-enabled-chains",
+    });
   for (const chain of catalog) {
     if (!draft.enabled.has(chain.id)) continue;
     const endpoint = draft.endpoints[chain.id];
     if (!endpoint) continue;
     for (const url of rpcLines(endpoint.rpcText)) {
       if (!isHttps(url)) {
-        problems.push(
-          `${chain.name} 的 RPC 端点必须是 https:// 开头的完整地址：明文 RPC 会泄露用户查询的每个地址和余额。`,
-        );
+        problems.push({
+          field: `${chain.name} RPC 端点`,
+          message:
+            "必须是 https:// 开头的完整地址：明文 RPC 会泄露用户查询的每个地址和余额。",
+          targetId: `wallet-rpc-${chain.id}`,
+        });
         break;
       }
     }
     if (endpoint.explorerUrl.trim() !== "" && !isHttps(endpoint.explorerUrl))
-      problems.push(
-        `${chain.name} 的区块浏览器地址必须是 https:// 开头的完整地址。`,
-      );
+      problems.push({
+        field: `${chain.name} 区块浏览器`,
+        message: "必须是 https:// 开头的完整地址。",
+        targetId: `wallet-explorer-${chain.id}`,
+      });
   }
   return problems;
 }
@@ -176,7 +191,7 @@ export function WalletChainsPage({ tenantId }: AdminPageProps) {
   const [reasonError, setReasonError] = useState("");
   const [saveComposerOpen, setSaveComposerOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [problems, setProblems] = useState<string[]>([]);
+  const [problems, setProblems] = useState<FormValidationError[]>([]);
   const [feedback, setFeedback] = useState<{
     kind: "error" | "success";
     message: string;
@@ -281,6 +296,7 @@ export function WalletChainsPage({ tenantId }: AdminPageProps) {
   const continueSave = () => {
     if (reason.trim().length < 3) {
       setReasonError("请填写至少 3 个字符的修改原因。");
+      focusFirstInvalidField('.save-composer [aria-invalid="true"]');
       return;
     }
     setReasonError("");
@@ -540,7 +556,7 @@ function WalletEditor({
   draft: WalletDraft;
   catalog: WalletCatalogEntry[];
   databaseVersion: number;
-  problems: string[];
+  problems: FormValidationError[];
   reason: string;
   reasonError: string;
   saveComposerOpen: boolean;
@@ -593,6 +609,7 @@ function WalletEditor({
           <label className="form-field">
             <span>Project ID</span>
             <input
+              id="wallet-project-id"
               className="input mono"
               value={draft.walletConnectProjectId}
               aria-invalid={projectIdInvalid}
@@ -633,7 +650,7 @@ function WalletEditor({
             </p>
           </div>
         </div>
-        <div className="card-body switch-list">
+        <div className="card-body switch-list" id="wallet-enabled-chains">
           {catalog.map((chain) => {
             const on = draft.enabled.has(chain.id);
             const endpoint = draft.endpoints[chain.id] ?? {
@@ -696,6 +713,7 @@ function WalletEditor({
                     <label className="form-field">
                       <span>{chain.name} RPC 端点</span>
                       <textarea
+                        id={`wallet-rpc-${chain.id}`}
                         className="input textarea mono"
                         rows={2}
                         aria-invalid={rpcInvalid}
@@ -729,6 +747,7 @@ function WalletEditor({
                     <label className="form-field">
                       <span>{chain.name} 区块浏览器</span>
                       <input
+                        id={`wallet-explorer-${chain.id}`}
                         className="input mono"
                         aria-invalid={explorerInvalid}
                         value={endpoint.explorerUrl}
@@ -778,18 +797,12 @@ function WalletEditor({
       </Card>
 
       <Card>
-        {problems.length > 0 ? (
-          <div className="card-body">
-            <div className="error-banner" role="alert">
-              <strong>还有 {problems.length} 处需要修正：</strong>
-              <ul>
-                {problems.map((problem) => (
-                  <li key={problem}>{problem}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ) : null}
+        <div className="card-body">
+          <FormValidationSummary
+            errors={problems}
+            title={`还有 ${problems.length} 处需要修正：`}
+          />
+        </div>
         {!saveComposerOpen ? (
           <div className="card-body save-toolbar">
             <span className="section-caption">
@@ -828,6 +841,7 @@ function WalletEditor({
             <label className="form-field save-reason-field">
               <span>修改原因</span>
               <textarea
+                id="wallet-change-reason"
                 autoFocus
                 className="input textarea"
                 aria-invalid={Boolean(reasonError)}
@@ -846,6 +860,19 @@ function WalletEditor({
                 <small>至少填写 3 个字符，将写入配置审计。</small>
               )}
             </label>
+            <FormValidationSummary
+              errors={
+                reasonError
+                  ? [
+                      {
+                        field: "修改原因",
+                        message: reasonError,
+                        targetId: "wallet-change-reason",
+                      },
+                    ]
+                  : []
+              }
+            />
             <div className="save-composer-footer">
               <span className="section-caption">
                 下一步仍会显示最终确认，不会立即提交。

@@ -214,7 +214,9 @@ describe("AppConfigPage theme workbench", () => {
     await user.click(screen.getByRole("button", { name: "保存配置" }));
     expect(screen.getByText("保存并激活应用配置")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "继续确认" }));
-    expect(screen.getByText("请填写至少 3 个字符的修改原因。")).toBeTruthy();
+    expect(
+      screen.getAllByText("请填写至少 3 个字符的修改原因。").length,
+    ).toBeGreaterThanOrEqual(1);
     await user.type(
       screen.getByPlaceholderText("例如：调整生产环境主题并更新 OTA 渠道"),
       "调整品牌主题色",
@@ -223,6 +225,22 @@ describe("AppConfigPage theme workbench", () => {
     expect(
       await screen.findByRole("dialog", { name: "激活应用配置？" }),
     ).toBeTruthy();
+  });
+
+  it("identifies invalid app configuration fields before opening the save composer", async () => {
+    apiMocks.config.mockResolvedValue(configView());
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "编辑配置" }));
+    const primaryInput = screen.getByRole("textbox", { name: "浅色主品牌色" });
+    await user.clear(primaryInput);
+    await user.type(primaryInput, "not-a-color");
+    await user.click(screen.getByRole("button", { name: "保存配置" }));
+
+    expect(screen.getByRole("alert").textContent).toContain("浅色主品牌色");
+    expect(screen.getByRole("button", { name: /浅色主品牌色/ })).toBeTruthy();
+    expect(screen.queryByText("保存并激活应用配置")).toBeNull();
   });
 
   it("applies the trading product palette as a draft preset", async () => {

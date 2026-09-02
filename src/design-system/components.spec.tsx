@@ -2,7 +2,13 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ConfirmDialog, FeedbackNotice, SidePanel } from "./components";
+import {
+  ConfirmDialog,
+  FeedbackNotice,
+  FormValidationSummary,
+  SelectField,
+  SidePanel,
+} from "./components";
 
 afterEach(() => cleanup());
 
@@ -146,5 +152,33 @@ describe("FeedbackNotice", () => {
   it("announces success without stealing focus", () => {
     render(<FeedbackNotice kind="success" message="保存成功" />);
     expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+  });
+});
+
+describe("form controls", () => {
+  it("renders a shared select shell and reports validation fields with focus links", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <SelectField label="链" value="eth" onChange={vi.fn()}>
+          <option value="eth">Ethereum</option>
+        </SelectField>
+        <input id="invalid-field" aria-invalid="true" />
+        <FormValidationSummary
+          errors={[
+            {
+              field: "合约地址",
+              message: "格式不正确",
+              targetId: "invalid-field",
+            },
+          ]}
+        />
+      </>,
+    );
+
+    expect(screen.getByRole("combobox", { name: "链" })).toBeTruthy();
+    const link = screen.getByRole("button", { name: "合约地址：格式不正确" });
+    await user.click(link);
+    expect(document.activeElement).toBe(screen.getByRole("textbox"));
   });
 });

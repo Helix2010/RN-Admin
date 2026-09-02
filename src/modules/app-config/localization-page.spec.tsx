@@ -318,7 +318,9 @@ describe("LocalizationPage draft workflow", () => {
     await user.click(screen.getByRole("button", { name: "继续确认" }));
     const reasonInput = screen.getByPlaceholderText("例如：新增日语并修正文案");
     expect(reasonInput.getAttribute("aria-invalid")).toBe("true");
-    expect(screen.getByText("请填写至少 3 个字符的修改原因。")).toBeTruthy();
+    expect(
+      screen.getAllByText("请填写至少 3 个字符的修改原因。").length,
+    ).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole("dialog")).toBeNull();
     await user.click(screen.getByRole("button", { name: "收起" }));
     expect(screen.queryByText("修改原因")).toBeNull();

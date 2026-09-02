@@ -17,6 +17,9 @@ import {
   ConfirmDialog,
   EmptyState,
   FeedbackNotice,
+  FormValidationSummary,
+  focusFirstInvalidField,
+  SelectField,
   SidePanel,
   StatusPill,
 } from "../../design-system/components";
@@ -447,6 +450,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
     if (!actionComposer) return;
     if (reason.trim().length < 3) {
       setReasonError("请填写至少 3 个字符的修改原因。");
+      focusFirstInvalidField('.save-composer [aria-invalid="true"]');
       return;
     }
     setReasonError("");
@@ -529,33 +533,30 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           </div>
         </div>
         <div className="card-body form-grid form-grid-3">
-          <label className="form-field">
-            <span>回退语言</span>
-            <select
-              className="input"
-              disabled={!draft}
-              value={data.settings.fallbackLanguage}
-              onChange={(event) =>
-                setDraft((current) =>
-                  current
-                    ? {
-                        ...current,
-                        settings: {
-                          ...current.settings,
-                          fallbackLanguage: event.target.value,
-                        },
-                      }
-                    : current,
-                )
-              }
-            >
-              {languages.map(([code, item]) => (
-                <option key={code} value={code}>
-                  {item.label}（{code}）
-                </option>
-              ))}
-            </select>
-          </label>
+          <SelectField
+            label="回退语言"
+            disabled={!draft}
+            value={data.settings.fallbackLanguage}
+            onChange={(event) =>
+              setDraft((current) =>
+                current
+                  ? {
+                      ...current,
+                      settings: {
+                        ...current.settings,
+                        fallbackLanguage: event.target.value,
+                      },
+                    }
+                  : current,
+              )
+            }
+          >
+            {languages.map(([code, item]) => (
+              <option key={code} value={code}>
+                {item.label}（{code}）
+              </option>
+            ))}
+          </SelectField>
           <label className="form-field">
             <span>刷新间隔（秒）</span>
             <input
@@ -691,8 +692,8 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                         />
                       </td>
                       <td>
-                        <select
-                          className="input"
+                        <SelectField
+                          aria-label={`${item.label}文字方向`}
                           disabled={!draft}
                           value={item.direction}
                           onChange={(event) =>
@@ -704,7 +705,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                         >
                           <option value="ltr">LTR</option>
                           <option value="rtl">RTL</option>
-                        </select>
+                        </SelectField>
                       </td>
                       <td>
                         <input
@@ -910,6 +911,10 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
             <span>Key</span>
             <input
               className="input mono"
+              id="localization-new-document-key"
+              aria-invalid={Boolean(
+                newDocumentError && !newDocumentError.includes("回退语言"),
+              )}
               autoFocus
               value={newDocumentKey}
               placeholder="例如 wallet.connect"
@@ -936,6 +941,11 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
               </span>
               <textarea
                 className="input textarea"
+                id={`localization-new-document-${code}`}
+                aria-invalid={Boolean(
+                  code === data.settings.fallbackLanguage &&
+                  newDocumentError?.includes("回退语言"),
+                )}
                 value={newDocumentValues[code] ?? ""}
                 placeholder={`填写 ${item.label} 文案`}
                 onChange={(event) =>
@@ -950,6 +960,23 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
           {newDocumentError && (
             <div className="error-banner">{newDocumentError}</div>
           )}
+          <FormValidationSummary
+            errors={
+              newDocumentError
+                ? [
+                    {
+                      field: newDocumentError.includes("回退语言")
+                        ? `回退语言 ${data.settings.fallbackLanguage} 文案`
+                        : "Key",
+                      message: newDocumentError,
+                      targetId: newDocumentError.includes("回退语言")
+                        ? `localization-new-document-${data.settings.fallbackLanguage}`
+                        : "localization-new-document-key",
+                    },
+                  ]
+                : []
+            }
+          />
         </div>
       </SidePanel>
       {draft && (
@@ -1039,6 +1066,7 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
               <label className="form-field save-reason-field">
                 <span>修改原因</span>
                 <textarea
+                  id="localization-change-reason"
                   autoFocus
                   className="input textarea"
                   aria-invalid={Boolean(reasonError)}
@@ -1062,6 +1090,19 @@ export function LocalizationPage({ tenantId }: AdminPageProps) {
                 )}
                 <small>至少填写 3 个字符，将写入操作审计。</small>
               </label>
+              <FormValidationSummary
+                errors={
+                  reasonError
+                    ? [
+                        {
+                          field: "修改原因",
+                          message: reasonError,
+                          targetId: "localization-change-reason",
+                        },
+                      ]
+                    : []
+                }
+              />
               <div className="save-composer-footer">
                 <span className="section-caption">
                   下一步仍会显示最终确认，不会立即提交。

@@ -1,6 +1,12 @@
 import { CloudCog } from "lucide-react";
+import { lazy } from "react";
 import type { AdminPlugin } from "../../plugin-system/types";
-import { DistributionSettingsPage } from "./pages";
+
+const DistributionSettingsPage = lazy(() =>
+  import("./pages").then(({ DistributionSettingsPage: page }) => ({
+    default: page,
+  })),
+);
 
 export const distributionSettingsPlugin: AdminPlugin = {
   id: "release-storage",

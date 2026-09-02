@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
@@ -308,11 +308,15 @@ export function App() {
           </div>
         </header>
         <div className="content">
-          <Page
-            onNavigate={navigate}
-            tenantId={tenant.id}
-            tenantName={tenant.name}
-          />
+          <Suspense
+            fallback={<div className="session-loading">正在加载页面…</div>}
+          >
+            <Page
+              onNavigate={navigate}
+              tenantId={tenant.id}
+              tenantName={tenant.name}
+            />
+          </Suspense>
         </div>
       </main>
     </div>

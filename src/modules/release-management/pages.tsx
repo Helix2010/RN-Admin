@@ -35,6 +35,8 @@ import {
   EmptyState,
   FeedbackNotice,
   FileDropzone,
+  FormValidationSummary,
+  focusFirstInvalidField,
   SelectField,
   SidePanel,
   StatusPill,
@@ -364,6 +366,12 @@ export function ReleasesPage({
   >("idle");
   const [artifactToken, setArtifactToken] = React.useState("");
   const [uploadError, setUploadError] = React.useState("");
+  const [releaseFormErrors, setReleaseFormErrors] = React.useState<{
+    file: string;
+    version: string;
+    buildNumber: string;
+    releaseNotes: string;
+  }>({ file: "", version: "", buildNumber: "", releaseNotes: "" });
   const uploadAbortRef = React.useRef<AbortController | null>(null);
   const uploadSessionRef = React.useRef<UploadSession | null>(null);
   const uploadedPartsRef = React.useRef(new Map<number, UploadSessionPart>());
@@ -674,6 +682,28 @@ export function ReleasesPage({
       setUploadError(error.message);
     },
   });
+  const validateReleaseForm = () => {
+    const next = {
+      file: artifactToken ? "" : "请先完成文件上传。",
+      version: /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version.trim())
+        ? ""
+        : "版本号必须使用 SemVer，例如 1.2.0。",
+      buildNumber:
+        Number.isInteger(Number(buildNumber)) && Number(buildNumber) >= 1
+          ? ""
+          : "构建号必须是大于等于 1 的整数。",
+      releaseNotes: releaseNotesValid
+        ? ""
+        : `请填写 ${requiredReleaseNoteLanguage || "默认语言"} 发布说明（至少 3 个字符）。`,
+    };
+    setReleaseFormErrors(next);
+    const first = Object.entries(next).find(([, message]) => message)?.[0];
+    if (first) {
+      focusFirstInvalidField(`#release-${first}`);
+      return false;
+    }
+    return true;
+  };
   const mutation = useMutation({
     mutationFn: async ({
       id,
@@ -772,6 +802,7 @@ export function ReleasesPage({
     const reason = actionReason.trim();
     if (reason.length < 3) {
       setActionReasonError("请填写至少 3 个字符的操作原因。");
+      focusFirstInvalidField("#release-action-reason");
       return;
     }
     setActionReasonError("");
@@ -850,6 +881,12 @@ export function ReleasesPage({
         <Button
           onClick={() => {
             setPublishedRelease(null);
+            setReleaseFormErrors({
+              file: "",
+              version: "",
+              buildNumber: "",
+              releaseNotes: "",
+            });
             // 强制升级每次都从关闭开始：上次勾了却没发成功时，残留的勾选会让
             // 下一次发布意外变成强制，而 checkbox 比输入框更容易被忽略
             setMandatory(false);
@@ -1006,13 +1043,11 @@ export function ReleasesPage({
               disabled={
                 uploadMutation.isPending ||
                 saveReleaseMutation.isPending ||
-                uploadState !== "uploaded" ||
-                !localizationQuery.isSuccess ||
-                !version.trim() ||
-                Number(buildNumber) < 1 ||
-                !releaseNotesValid
+                !localizationQuery.isSuccess
               }
-              onClick={() => saveReleaseMutation.mutate()}
+              onClick={() => {
+                if (validateReleaseForm()) saveReleaseMutation.mutate();
+              }}
             >
               <CloudUpload size={16} />
               保存发布记录
@@ -1035,24 +1070,60 @@ export function ReleasesPage({
             <label className="form-field">
               <span>版本号</span>
               <input
+                id="release-version"
                 className="input"
                 placeholder="1.2.0"
                 value={version}
                 disabled={saveReleaseMutation.isPending}
-                onChange={(event) => setVersion(event.target.value)}
+                aria-invalid={Boolean(releaseFormErrors.version)}
+                aria-describedby={
+                  releaseFormErrors.version
+                    ? "release-version-error"
+                    : undefined
+                }
+                onChange={(event) => {
+                  setVersion(event.target.value);
+                  setReleaseFormErrors((current) => ({
+                    ...current,
+                    version: "",
+                  }));
+                }}
               />
+              {releaseFormErrors.version ? (
+                <small className="field-error" id="release-version-error">
+                  {releaseFormErrors.version}
+                </small>
+              ) : null}
             </label>
             <label className="form-field">
               <span>构建号</span>
               <input
+                id="release-buildNumber"
                 className="input"
                 type="number"
                 min={1}
                 placeholder="120"
                 value={buildNumber}
                 disabled={saveReleaseMutation.isPending}
-                onChange={(event) => setBuildNumber(event.target.value)}
+                aria-invalid={Boolean(releaseFormErrors.buildNumber)}
+                aria-describedby={
+                  releaseFormErrors.buildNumber
+                    ? "release-buildNumber-error"
+                    : undefined
+                }
+                onChange={(event) => {
+                  setBuildNumber(event.target.value);
+                  setReleaseFormErrors((current) => ({
+                    ...current,
+                    buildNumber: "",
+                  }));
+                }}
               />
+              {releaseFormErrors.buildNumber ? (
+                <small className="field-error" id="release-buildNumber-error">
+                  {releaseFormErrors.buildNumber}
+                </small>
+              ) : null}
             </label>
           </div>
           <div className="form-field">
@@ -1080,9 +1151,13 @@ export function ReleasesPage({
               </div>
             ) : null}
           </div>
-          <div className="form-field">
+          <div
+            className="form-field"
+            aria-invalid={Boolean(releaseFormErrors.file)}
+          >
             <span>{platform === "android" ? "APK 安装包" : "安装包"}</span>
             <FileDropzone
+              id="release-file"
               label={platform === "android" ? "APK 安装包" : "安装包"}
               file={file}
               accept={
@@ -1118,13 +1193,17 @@ export function ReleasesPage({
                 setUploadSpeed(0);
                 setUploadStage("");
                 setUploadState("idle");
+                setReleaseFormErrors((current) => ({ ...current, file: "" }));
                 setFile(nextFile);
                 if (nextFile) startUpload(nextFile);
               }}
             />
+            {releaseFormErrors.file ? (
+              <small className="field-error">{releaseFormErrors.file}</small>
+            ) : null}
           </div>
           <label className="form-field release-notes-field">
-            <span>发布说明（多语言）</span>
+            <span id="release-releaseNotes-label">发布说明（多语言）</span>
             {localizationQuery.isLoading ? (
               <div className="prerequisite-panel">
                 正在读取当前租户语言配置…
@@ -1159,18 +1238,37 @@ export function ReleasesPage({
                   ))}
                 </div>
                 <textarea
+                  id="release-releaseNotes"
                   className="input textarea"
                   placeholder="例如：修复行情刷新问题，优化钱包连接体验"
                   value={releaseNotes[activeReleaseNoteLanguage] ?? ""}
                   disabled={saveReleaseMutation.isPending}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setReleaseNotes((current) => ({
                       ...current,
                       [activeReleaseNoteLanguage]: event.target.value,
-                    }))
-                  }
+                    }));
+                    setReleaseFormErrors((current) => ({
+                      ...current,
+                      releaseNotes: "",
+                    }));
+                  }}
                   aria-label={`${activeReleaseNoteLanguage} 发布说明`}
+                  aria-invalid={Boolean(releaseFormErrors.releaseNotes)}
+                  aria-describedby={
+                    releaseFormErrors.releaseNotes
+                      ? "release-releaseNotes-error"
+                      : undefined
+                  }
                 />
+                {releaseFormErrors.releaseNotes ? (
+                  <small
+                    className="field-error"
+                    id="release-releaseNotes-error"
+                  >
+                    {releaseFormErrors.releaseNotes}
+                  </small>
+                ) : null}
                 <small>
                   支持语言来自多语言管理；默认语言必须填写，其他语言可选。
                 </small>
@@ -1271,6 +1369,22 @@ export function ReleasesPage({
               )}
             </div>
           )}
+          <FormValidationSummary
+            errors={Object.entries(releaseFormErrors)
+              .filter(([, message]) => message)
+              .map(([field, message]) => ({
+                field:
+                  field === "file"
+                    ? "安装包"
+                    : field === "version"
+                      ? "版本号"
+                      : field === "buildNumber"
+                        ? "构建号"
+                        : "发布说明",
+                message,
+                targetId: `release-${field}`,
+              }))}
+          />
         </div>
       </SidePanel>
       <SidePanel
@@ -1306,6 +1420,7 @@ export function ReleasesPage({
       >
         <div className="side-panel-form">
           <textarea
+            id="release-action-reason"
             className="input textarea"
             aria-label="操作原因"
             aria-invalid={Boolean(actionReasonError)}
@@ -1325,6 +1440,19 @@ export function ReleasesPage({
             </small>
           )}
           <span className="muted">原因会与操作者、请求 ID 一起记录。</span>
+          <FormValidationSummary
+            errors={
+              actionReasonError
+                ? [
+                    {
+                      field: "操作原因",
+                      message: actionReasonError,
+                      targetId: "release-action-reason",
+                    },
+                  ]
+                : []
+            }
+          />
         </div>
       </SidePanel>
       <ConfirmDialog
@@ -1760,6 +1888,11 @@ export function OtaPage({ tenantId }: AdminPageProps) {
   } | null>(null);
   const [reason, setReason] = React.useState("");
   const [reasonError, setReasonError] = React.useState("");
+  const [otaFormErrors, setOtaFormErrors] = React.useState({
+    file: "",
+    baseReleaseId: "",
+    releaseNotes: "",
+  });
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const abortRef = React.useRef<AbortController | null>(null);
   const uploadCancelledRef = React.useRef(false);
@@ -1865,6 +1998,23 @@ export function OtaPage({ tenantId }: AdminPageProps) {
       setUploadError(error instanceof Error ? error.message : "保存 OTA 失败");
     },
   });
+  const validateOtaForm = () => {
+    const next = {
+      file: artifactToken ? "" : "请先上传 OTA 资源包。",
+      baseReleaseId: baseReleaseId ? "" : "请选择基线 APK。",
+      releaseNotes:
+        (releaseNotes[otaDefaultLanguage] ?? "").trim().length >= 3
+          ? ""
+          : `请填写 ${otaDefaultLanguage || "默认语言"} 发布说明（至少 3 个字符）。`,
+    };
+    setOtaFormErrors(next);
+    const first = Object.entries(next).find(([, message]) => message)?.[0];
+    if (first) {
+      focusFirstInvalidField(`#ota-${first}`);
+      return false;
+    }
+    return true;
+  };
   const actionMutation = useMutation({
     mutationFn: ({
       id,
@@ -1895,6 +2045,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
     setBaseReleaseId("");
     setApplyStrategy("next_launch");
     setSourceCommitSha("");
+    setOtaFormErrors({ file: "", baseReleaseId: "", releaseNotes: "" });
     uploadMutation.reset();
     saveMutation.reset();
   };
@@ -2207,14 +2358,10 @@ export function OtaPage({ tenantId }: AdminPageProps) {
               取消
             </Button>
             <Button
-              disabled={
-                uploadMutation.isPending ||
-                saveMutation.isPending ||
-                uploadState !== "uploaded" ||
-                !baseReleaseId ||
-                (releaseNotes[otaDefaultLanguage] ?? "").trim().length < 3
-              }
-              onClick={() => saveMutation.mutate()}
+              disabled={uploadMutation.isPending || saveMutation.isPending}
+              onClick={() => {
+                if (validateOtaForm()) saveMutation.mutate();
+              }}
             >
               {saveMutation.isPending ? "正在保存…" : "保存为待发布"}
             </Button>
@@ -2235,10 +2382,23 @@ export function OtaPage({ tenantId }: AdminPageProps) {
             <option value="ios">iOS</option>
           </SelectField>
           <SelectField
+            id="ota-baseReleaseId"
             label="基线 APK"
             value={baseReleaseId}
             disabled={uploadState !== "idle" || baseQuery.isLoading}
-            onChange={(e) => setBaseReleaseId(e.target.value)}
+            aria-invalid={Boolean(otaFormErrors.baseReleaseId)}
+            aria-describedby={
+              otaFormErrors.baseReleaseId
+                ? "ota-baseReleaseId-error"
+                : undefined
+            }
+            onChange={(e) => {
+              setBaseReleaseId(e.target.value);
+              setOtaFormErrors((current) => ({
+                ...current,
+                baseReleaseId: "",
+              }));
+            }}
           >
             <option value="">请选择已校验或已发布的 APK</option>
             {(baseQuery.data?.items ?? []).map((base) => (
@@ -2248,6 +2408,11 @@ export function OtaPage({ tenantId }: AdminPageProps) {
               </option>
             ))}
           </SelectField>
+          {otaFormErrors.baseReleaseId ? (
+            <small className="field-error" id="ota-baseReleaseId-error">
+              {otaFormErrors.baseReleaseId}
+            </small>
+          ) : null}
           {baseReleaseId &&
             (() => {
               const base = baseQuery.data?.items.find(
@@ -2315,6 +2480,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
           <div className="form-field">
             <span>OTA 资源包</span>
             <FileDropzone
+              id="ota-file"
               label="OTA 资源包"
               file={file}
               accept=".zip,application/zip"
@@ -2331,10 +2497,14 @@ export function OtaPage({ tenantId }: AdminPageProps) {
                 setArtifactToken("");
                 setUploadState("idle");
                 setUploadError("");
+                setOtaFormErrors((current) => ({ ...current, file: "" }));
                 setUploadProgress(0);
                 startUpload(next);
               }}
             />
+            {otaFormErrors.file ? (
+              <small className="field-error">{otaFormErrors.file}</small>
+            ) : null}
           </div>
           {file && uploadState !== "idle" && (
             <div className="upload-progress-panel">
@@ -2401,19 +2571,49 @@ export function OtaPage({ tenantId }: AdminPageProps) {
               ))}
             </div>
             <textarea
+              id="ota-releaseNotes"
               className="input textarea"
               value={releaseNotes[activeReleaseNoteLanguage] ?? ""}
-              onChange={(e) =>
+              onChange={(e) => {
                 setReleaseNotes((current) => ({
                   ...current,
                   [activeReleaseNoteLanguage]: e.target.value,
-                }))
-              }
+                }));
+                setOtaFormErrors((current) => ({
+                  ...current,
+                  releaseNotes: "",
+                }));
+              }}
               placeholder="例如：修复行情刷新问题"
               disabled={saveMutation.isPending}
+              aria-invalid={Boolean(otaFormErrors.releaseNotes)}
+              aria-describedby={
+                otaFormErrors.releaseNotes
+                  ? "ota-releaseNotes-error"
+                  : undefined
+              }
             />
+            {otaFormErrors.releaseNotes ? (
+              <small className="field-error" id="ota-releaseNotes-error">
+                {otaFormErrors.releaseNotes}
+              </small>
+            ) : null}
             <small>语言来自多语言管理；默认语言必须填写，其他语言可选。</small>
           </label>
+          <FormValidationSummary
+            errors={Object.entries(otaFormErrors)
+              .filter(([, message]) => message)
+              .map(([field, message]) => ({
+                field:
+                  field === "file"
+                    ? "OTA 资源包"
+                    : field === "baseReleaseId"
+                      ? "基线 APK"
+                      : "发布说明",
+                message,
+                targetId: `ota-${field}`,
+              }))}
+          />
           <label className="form-field">
             <span>代码提交 SHA（可选）</span>
             <input
@@ -2446,6 +2646,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
               onClick={() => {
                 if (reason.trim().length < 3) {
                   setReasonError("请填写至少 3 个字符的操作原因。");
+                  focusFirstInvalidField("#ota-action-reason");
                   return;
                 }
                 setConfirmOpen(true);
@@ -2460,6 +2661,7 @@ export function OtaPage({ tenantId }: AdminPageProps) {
           <label className="form-field">
             <span>操作原因</span>
             <textarea
+              id="ota-action-reason"
               className="input textarea"
               value={reason}
               onChange={(e) => {
@@ -2478,6 +2680,19 @@ export function OtaPage({ tenantId }: AdminPageProps) {
               </small>
             )}
           </label>
+          <FormValidationSummary
+            errors={
+              reasonError
+                ? [
+                    {
+                      field: "操作原因",
+                      message: reasonError,
+                      targetId: "ota-action-reason",
+                    },
+                  ]
+                : []
+            }
+          />
           <span className="muted">原因会与操作者、请求 ID 一起记录。</span>
         </div>
       </SidePanel>
