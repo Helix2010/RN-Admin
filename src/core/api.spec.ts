@@ -270,13 +270,16 @@ describe("adminApi tokens", () => {
     );
   });
 
-  it("rejects a token whose decimals are outside 0-36", async () => {
+  it("drops a token whose decimals are outside 0-36", async () => {
     stubJson({
       tokens: [{ ...usdt, decimals: 40 }],
       metadata: { databaseVersion: 12 },
     });
 
-    await expect(adminApi.listTokens()).rejects.toThrow();
+    // 越界的那一行被丢掉，列表本身仍然可用（见下面的 tolerance 用例）
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(adminApi.listTokens()).resolves.toMatchObject({ tokens: [] });
+    warn.mockRestore();
   });
 
   it("returns preview data with exists defaulting to null", async () => {
@@ -413,3 +416,51 @@ function summary() {
     wallet: { chains: ["bsc"], walletConnectConfigured: true },
   };
 }
+
+describe("token list tolerance", () => {
+  it("drops a row it cannot parse instead of failing the whole list", async () => {
+    // 出问题的那一行恰恰需要运营在这个页面上停用或删除它，整页不可用就没法自救
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const good = {
+      id: 1,
+      scope: "global",
+      chain: "bsc",
+      address: "native",
+      symbol: "BNB",
+      name: "BNB",
+      decimals: 18,
+      displayDecimals: 4,
+      logoColor: "#F0B90B",
+      sortWeight: 1000,
+      enabled: true,
+      allowlisted: true,
+      metadataSyncedAt: null,
+      updatedAt: "2026-09-02T00:00:00.000Z",
+    };
+    const bad = {
+      ...good,
+      id: 2,
+      address: "0x0000000000000000000000000000000000000001",
+      decimals: 37,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            tokens: [good, bad],
+            metadata: { databaseVersion: 3 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const list = await adminApi.listTokens();
+
+    expect(list.tokens.map((token) => token.id)).toEqual([1]);
+    expect(list.metadata.databaseVersion).toBe(3);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});

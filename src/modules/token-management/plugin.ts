@@ -1,4 +1,3 @@
-import { Coins } from "lucide-react";
 import { TokenPage } from "./token-page";
 import type { AdminPlugin } from "../../plugin-system/types";
 
@@ -9,5 +8,3 @@ export const tokenManagementPlugin: AdminPlugin = {
   navigation: [{ id: "tokens", label: "代币管理", icon: "coins" }],
   pages: { tokens: TokenPage },
 };
-
-export const tokenManagementIcon = Coins;

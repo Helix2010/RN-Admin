@@ -504,10 +504,10 @@ describe("TokenPage add token", () => {
     // 第二步：symbol / decimals 只读灰显，name 可改
     const symbol = (await screen.findByLabelText("Symbol")) as HTMLInputElement;
     expect(symbol.value).toBe("USDC");
-    expect(symbol.disabled).toBe(true);
+    expect(symbol.readOnly).toBe(true);
     const decimals = screen.getByLabelText("Decimals") as HTMLInputElement;
     expect(decimals.value).toBe("6");
-    expect(decimals.disabled).toBe(true);
+    expect(decimals.readOnly).toBe(true);
     expect(screen.getByText(/^在 App 客户端白名单内/)).toBeTruthy();
     const name = screen.getByRole("textbox", { name: /^名称/ });
     expect((name as HTMLInputElement).disabled).toBe(false);
@@ -590,7 +590,7 @@ describe("TokenPage edit token", () => {
     ] as const) {
       const input = within(panel).getByLabelText(label) as HTMLInputElement;
       expect(input.value).toBe(value);
-      expect(input.disabled).toBe(true);
+      expect(input.readOnly).toBe(true);
     }
     expect(
       within(panel).getByRole("button", { name: "重新从链上读取" }),

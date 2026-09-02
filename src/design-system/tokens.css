@@ -2821,7 +2821,7 @@ tr:hover td {
   border-radius: 12px;
   background: var(--panel-2);
 }
-.token-readonly-grid .form-field .input:disabled {
+.token-readonly-grid .form-field .input:read-only {
   color: var(--muted);
   background: var(--table-head);
   cursor: not-allowed;

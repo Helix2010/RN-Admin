@@ -268,7 +268,6 @@ export const tokenSchema = z.looseObject({
   updatedAt: z.string(),
 });
 export type Token = z.infer<typeof tokenSchema>;
-export type TokenScope = Token["scope"];
 
 /** preview 只读链、不入库：返回链上元数据与目录里是否已有同一代币。 */
 export const tokenPreviewSchema = z.looseObject({
@@ -288,8 +287,20 @@ export type TokenPreview = z.infer<typeof tokenPreviewSchema>;
 const tokenMetadataSchema = z.object({
   databaseVersion: z.number().int().nonnegative(),
 });
+/**
+ * 列表里一条脏数据（比如手工改库把 decimals 改成 37）不能让整页不可用——
+ * 出问题的那一行恰恰需要运营在这个页面上停用或删除它。逐条解析，坏的丢掉并留痕。
+ */
+const tolerantTokenArraySchema = z.array(z.unknown()).transform((rows) =>
+  rows.flatMap((row) => {
+    const parsed = tokenSchema.safeParse(row);
+    if (parsed.success) return [parsed.data];
+    console.warn("[tokens] 丢弃一条无法解析的代币记录", parsed.error.issues);
+    return [];
+  }),
+);
 const tokenListSchema = z.object({
-  tokens: z.array(tokenSchema),
+  tokens: tolerantTokenArraySchema,
   metadata: tokenMetadataSchema,
 });
 export type TokenList = z.infer<typeof tokenListSchema>;
@@ -322,7 +333,6 @@ const tokenResyncSchema = z.union([
     onchain: tokenOnchainPairSchema,
   }),
 ]);
-export type TokenResyncResult = z.infer<typeof tokenResyncSchema>;
 export type TokenCreateInput = {
   chain: string;
   contractAddress: string;

@@ -6,6 +6,7 @@ import {
   ApiError,
   type AppConfig,
   type Token,
+  type TokenList,
   type TokenCreateInput,
   type TokenPreview,
   type TokenUpdateInput,
@@ -154,7 +155,14 @@ export function TokenPage({ tenantId }: AdminPageProps) {
   const [rowReason, setRowReason] = useState("");
   const [rowReasonError, setRowReasonError] = useState("");
 
-  const refreshAfterWrite = () => {
+  const refreshAfterWrite = (metadata?: { databaseVersion: number }) => {
+    // 写操作的响应里已经带了新版本号：先同步写进缓存，再后台刷新。否则从"重新读链
+    // 确认"到列表刷新完成之间，"保存修改"按钮已经可点而 expectedVersion 还是旧的，
+    // 这一下必然吃一个可避免的 409
+    if (metadata)
+      queryClient.setQueryData<TokenList>(["tokens", tenantId], (old) =>
+        old ? { ...old, metadata } : old,
+      );
     void queryClient.invalidateQueries({ queryKey: ["tokens", tenantId] });
     // 代币写操作也会让 app_configs.version +1，配置页缓存的版本号随之过期
     void queryClient.invalidateQueries({ queryKey: ["config", tenantId] });
@@ -773,6 +781,14 @@ function CreateTokenPanel({
     setPreview(null);
     setPreviewError("");
     setSubmitError("");
+    // 换了一枚代币，第三步里为上一枚填的排序、颜色、启用状态不该被带过去
+    setName("");
+    setDisplayDecimals("");
+    setDisplayDecimalsError("");
+    setSortWeight("0");
+    setSortWeightError("");
+    setLogoColor("");
+    setEnabled(true);
   };
   const submit = () => {
     if (!preview) return;
@@ -954,8 +970,8 @@ function CreateTokenPanel({
                   <input
                     className="input mono"
                     value={preview.symbol}
-                    disabled
                     readOnly
+                    aria-readonly="true"
                   />
                 </label>
                 <label className="form-field">
@@ -963,8 +979,8 @@ function CreateTokenPanel({
                   <input
                     className="input mono"
                     value={String(preview.decimals)}
-                    disabled
                     readOnly
+                    aria-readonly="true"
                   />
                 </label>
                 <span className="token-readonly-note">
@@ -1150,7 +1166,7 @@ function EditTokenPanel({
   expectedVersion: number;
   onClose: () => void;
   onSaved: (saved: Token, before: Token) => void;
-  onResynced: () => void;
+  onResynced: (metadata?: { databaseVersion: number }) => void;
   onFailed: () => void;
 }) {
   // 重新读链确认后 symbol / decimals 会变，所以只读字段跟着本地的 current 走
@@ -1202,7 +1218,7 @@ function EditTokenPanel({
         setNotice(
           `已按链上数据更新：${result.token.symbol} · ${result.token.decimals} 位。`,
         );
-        onResynced();
+        onResynced("metadata" in result ? result.metadata : undefined);
         return;
       }
       setNotice("");
@@ -1331,8 +1347,8 @@ function EditTokenPanel({
               <input
                 className="input"
                 value={chain ? `${chain.name}（${chain.id}）` : current.chain}
-                disabled
                 readOnly
+                aria-readonly="true"
               />
             </label>
             <label className="form-field">
@@ -1340,8 +1356,8 @@ function EditTokenPanel({
               <input
                 className="input mono"
                 value={isNative ? "原生币（没有合约）" : current.address}
-                disabled
                 readOnly
+                aria-readonly="true"
               />
             </label>
             <label className="form-field">
@@ -1349,8 +1365,8 @@ function EditTokenPanel({
               <input
                 className="input mono"
                 value={current.symbol}
-                disabled
                 readOnly
+                aria-readonly="true"
               />
             </label>
             <label className="form-field">
@@ -1358,8 +1374,8 @@ function EditTokenPanel({
               <input
                 className="input mono"
                 value={String(current.decimals)}
-                disabled
                 readOnly
+                aria-readonly="true"
               />
             </label>
             <div className="token-readonly-note">
