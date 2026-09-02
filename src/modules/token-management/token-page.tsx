@@ -655,10 +655,12 @@ function ReasonField({
 function ColorField({
   value,
   error,
+  errorId,
   onChange,
 }: {
   value: string;
   error: string;
+  errorId: string;
   onChange: (value: string) => void;
 }) {
   const valid = hexColorPattern.test(value.trim());
@@ -666,33 +668,44 @@ function ColorField({
     <label className="form-field">
       <span>图标颜色</span>
       <div className="color-input-row">
-        {valid ? (
+        <span className={`color-picker-control${valid ? "" : " is-empty"}`}>
           <input
             className="color-picker"
             type="color"
             aria-label="图标颜色选择器"
-            value={value.trim()}
-            onChange={(event) => onChange(event.target.value)}
+            value={valid ? value.trim() : "#000000"}
+            onChange={(event) => onChange(event.target.value.toUpperCase())}
           />
-        ) : (
-          <i className="color-swatch" aria-hidden="true" />
-        )}
+        </span>
         <input
           className="input mono"
           aria-label="图标颜色"
           aria-invalid={Boolean(error)}
+          aria-describedby={error ? errorId : undefined}
           value={value}
           placeholder="#26A17B"
           onChange={(event) => onChange(event.target.value)}
         />
       </div>
       {error ? (
-        <small className="field-error">{error}</small>
+        <small className="field-error" id={errorId}>
+          {error}
+        </small>
       ) : (
         <small>必填。App 里代币图标的底色，#RRGGBB 格式。</small>
       )}
     </label>
   );
+}
+
+function focusFirstInvalidField() {
+  window.setTimeout(() => {
+    const firstInvalid = document.querySelector<HTMLElement>(
+      '.side-panel [aria-invalid="true"]',
+    );
+    firstInvalid?.focus();
+    firstInvalid?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  }, 0);
 }
 
 /** 展示精度：只影响显示，上限是代币精度。返回错误文案，合法时为空串。 */
@@ -741,6 +754,7 @@ function CreateTokenPanel({
   const [reasonError, setReasonError] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [validationSummary, setValidationSummary] = useState("");
 
   const selectedChain = catalog.find((item) => item.id === chain);
   const previewMutation = useMutation({
@@ -798,6 +812,7 @@ function CreateTokenPanel({
     setSortWeightError("");
     setLogoColor("");
     setEnabled(true);
+    setValidationSummary("");
   };
   const submit = () => {
     if (!preview) return;
@@ -820,7 +835,12 @@ function CreateTokenPanel({
       setReasonError(reasonTooShort);
       ok = false;
     } else setReasonError("");
-    if (!ok) return;
+    if (!ok) {
+      setValidationSummary("请修正表单中的错误后再添加。错误字段已标记。");
+      focusFirstInvalidField();
+      return;
+    }
+    setValidationSummary("");
     setSubmitError("");
     setConfirmOpen(true);
   };
@@ -1037,10 +1057,11 @@ function CreateTokenPanel({
             <>
               <div className="token-inline-fields">
                 <label className="form-field">
-                  <span>展示精度</span>
+                  <span>展示精度（位）</span>
                   <input
-                    className="input"
+                    className="input token-number-input"
                     type="number"
+                    inputMode="numeric"
                     min={0}
                     max={preview.decimals}
                     step={1}
@@ -1054,6 +1075,7 @@ function CreateTokenPanel({
                     onChange={(event) => {
                       setDisplayDecimals(event.target.value);
                       if (displayDecimalsError) setDisplayDecimalsError("");
+                      if (validationSummary) setValidationSummary("");
                     }}
                   />
                   {displayDecimalsError ? (
@@ -1071,31 +1093,47 @@ function CreateTokenPanel({
                   )}
                 </label>
                 <label className="form-field">
-                  <span>排序权重</span>
+                  <span>排序权重（整数）</span>
                   <input
-                    className="input"
+                    className="input token-number-input"
                     type="number"
+                    inputMode="numeric"
                     step={1}
                     value={sortWeight}
                     aria-invalid={Boolean(sortWeightError)}
+                    aria-describedby={
+                      sortWeightError
+                        ? "token-create-sort-weight-error"
+                        : undefined
+                    }
                     onChange={(event) => {
                       setSortWeight(event.target.value);
                       if (sortWeightError) setSortWeightError("");
+                      if (validationSummary) setValidationSummary("");
                     }}
                   />
                   {sortWeightError ? (
-                    <small className="field-error">{sortWeightError}</small>
+                    <small
+                      className="field-error"
+                      id="token-create-sort-weight-error"
+                    >
+                      {sortWeightError}
+                    </small>
                   ) : (
-                    <small>数值越大越靠前；平台全局代币多为 100 以上。</small>
+                    <small>
+                      默认 0；数值越大越靠前，平台全局代币通常为 100 以上。
+                    </small>
                   )}
                 </label>
               </div>
               <ColorField
                 value={logoColor}
                 error={colorError}
+                errorId="token-create-color-error"
                 onChange={(value) => {
                   setLogoColor(value);
                   if (colorError) setColorError("");
+                  if (validationSummary) setValidationSummary("");
                 }}
               />
               <label className="switch-row">
@@ -1118,12 +1156,19 @@ function CreateTokenPanel({
                 onChange={(value) => {
                   setReason(value);
                   if (reasonError) setReasonError("");
+                  if (validationSummary) setValidationSummary("");
                 }}
               />
               <FeedbackNotice
                 kind="error"
                 message={submitError ? `添加失败：${submitError}` : ""}
                 onDismiss={() => setSubmitError("")}
+              />
+              <FeedbackNotice
+                kind="error"
+                message={validationSummary}
+                onDismiss={() => setValidationSummary("")}
+                placement="viewport"
               />
             </>
           ) : null}
@@ -1465,13 +1510,21 @@ function EditTokenPanel({
                 step={1}
                 value={sortWeight}
                 aria-invalid={Boolean(sortWeightError)}
+                aria-describedby={
+                  sortWeightError ? "token-edit-sort-weight-error" : undefined
+                }
                 onChange={(event) => {
                   setSortWeight(event.target.value);
                   if (sortWeightError) setSortWeightError("");
                 }}
               />
               {sortWeightError ? (
-                <small className="field-error">{sortWeightError}</small>
+                <small
+                  className="field-error"
+                  id="token-edit-sort-weight-error"
+                >
+                  {sortWeightError}
+                </small>
               ) : (
                 <small>数值越大越靠前。</small>
               )}
@@ -1480,6 +1533,7 @@ function EditTokenPanel({
           <ColorField
             value={logoColor}
             error={colorError}
+            errorId="token-edit-color-error"
             onChange={(value) => {
               setLogoColor(value);
               if (colorError) setColorError("");

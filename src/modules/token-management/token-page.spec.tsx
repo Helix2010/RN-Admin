@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -475,6 +476,48 @@ describe("TokenPage add token", () => {
       (screen.getByRole("button", { name: "下一步" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it("keeps the colour picker available before a hex value is entered and syncs the text field", async () => {
+    apiMocks.previewToken.mockResolvedValue(preview());
+    const user = userEvent.setup();
+    renderPage();
+
+    await openCreatePanel(user);
+    await readOnchain(user, usdtAddress);
+    await user.click(screen.getByRole("button", { name: "下一步" }));
+
+    const picker = screen.getByLabelText("图标颜色选择器") as HTMLInputElement;
+    expect(picker.type).toBe("color");
+    fireEvent.change(picker, { target: { value: "#2775ca" } });
+    expect(
+      (screen.getByRole("textbox", { name: "图标颜色" }) as HTMLInputElement)
+        .value,
+    ).toBe("#2775CA");
+  });
+
+  it("shows a visible validation summary and focuses the invalid reason instead of appearing unresponsive", async () => {
+    apiMocks.previewToken.mockResolvedValue(preview());
+    const user = userEvent.setup();
+    renderPage();
+
+    await openCreatePanel(user);
+    await readOnchain(user, usdtAddress);
+    await user.click(screen.getByRole("button", { name: "下一步" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "图标颜色" }),
+      "#26A17B",
+    );
+    const reason = screen.getByRole("textbox", { name: /修改原因/ });
+    await user.type(reason, "上币");
+    await user.click(screen.getByRole("button", { name: "添加到目录" }));
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "请修正表单中的错误后再添加",
+    );
+    expect(screen.getByText("请填写至少 3 个字符的修改原因。")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(reason));
+    expect(apiMocks.createToken).not.toHaveBeenCalled();
   });
 
   it("reads symbol and decimals from the chain, caps display decimals and sends the create payload", async () => {
