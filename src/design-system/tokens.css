@@ -2807,7 +2807,70 @@ tr:hover td {
 .token-chain-card .card-header h2 {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.token-chain-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.token-chain-toggle:hover {
+  color: var(--text);
+  border-color: var(--brand);
+  background: var(--hover);
+}
+.token-chain-toggle svg {
+  transition: transform 140ms ease;
+}
+.token-chain-toggle svg.is-open {
+  transform: rotate(180deg);
+}
+.token-chain-collapsed-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 14px 18px;
+  color: var(--muted);
+  background: var(--panel-2);
+  font-size: 12px;
+}
+.token-disabled-chains {
+  display: grid;
+  gap: 14px;
+}
+.token-disabled-chains-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.token-disabled-chains-header > div {
+  display: grid;
+  gap: 3px;
+}
+.token-disabled-chains-header strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.token-disabled-chains-header span {
+  color: var(--muted);
+  font-size: 11px;
 }
 .token-table {
   min-width: 860px;

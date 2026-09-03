@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Edit3, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  Edit3,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+} from "lucide-react";
 import {
   adminApi,
   ApiError,
@@ -87,11 +94,15 @@ function syncedAtLabel(value: string | null): string {
 }
 
 type ChainGroup = { chain: WalletCatalogEntry; tokens: Token[] };
+const disabledChainCollapseThreshold = 3;
+const disabledChainSectionCountThreshold = 3;
+const disabledChainSectionTokenThreshold = 8;
 
 /** 按链目录顺序分组。组内 sortWeight 降序、symbol 升序，与下发顺序一致。 */
 function groupByChain(
   tokens: Token[],
   catalog: WalletCatalogEntry[],
+  enabledChains: string[],
 ): ChainGroup[] {
   const chains = new Map<string, WalletCatalogEntry>(
     catalog.map((chain) => [chain.id, chain]),
@@ -102,15 +113,26 @@ function groupByChain(
       throw new Error(
         `代币 ${token.symbol} 所在的链 ${token.chain} 不在平台链目录里`,
       );
-  return Array.from(chains.values()).map((chain) => ({
-    chain,
-    tokens: tokens
-      .filter((token) => token.chain === chain.id)
-      .sort(
-        (a, b) =>
-          b.sortWeight - a.sortWeight || a.symbol.localeCompare(b.symbol),
-      ),
-  }));
+  const catalogOrder = new Map(
+    catalog.map((chain, index) => [chain.id, index]),
+  );
+  return Array.from(chains.values())
+    .map((chain) => ({
+      chain,
+      tokens: tokens
+        .filter((token) => token.chain === chain.id)
+        .sort(
+          (a, b) =>
+            b.sortWeight - a.sortWeight || a.symbol.localeCompare(b.symbol),
+        ),
+    }))
+    .sort(
+      (a, b) =>
+        Number(!enabledChains.includes(a.chain.id)) -
+          Number(!enabledChains.includes(b.chain.id)) ||
+        (catalogOrder.get(a.chain.id) ?? Number.MAX_SAFE_INTEGER) -
+          (catalogOrder.get(b.chain.id) ?? Number.MAX_SAFE_INTEGER),
+    );
 }
 
 function parseInteger(value: string): number | null {
@@ -139,6 +161,10 @@ export function TokenPage({ tenantId }: AdminPageProps) {
   const [rowAction, setRowAction] = useState<RowAction>(null);
   const [rowReason, setRowReason] = useState("");
   const [rowReasonError, setRowReasonError] = useState("");
+  const [toggledChains, setToggledChains] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [disabledSectionToggled, setDisabledSectionToggled] = useState(false);
 
   const refreshAfterWrite = (metadata?: { databaseVersion: number }) => {
     // 写操作的响应里已经带了新版本号：先同步写进缓存，再后台刷新。否则从"重新读链
@@ -226,7 +252,23 @@ export function TokenPage({ tenantId }: AdminPageProps) {
   const catalog = config.metadata.walletCatalog;
   // 钱包配置里没启用的链，它上面的代币不会下发给 App：卡片与添加结果都要说清
   const enabledChains = config.config.wallet.chains;
-  const groups = groupByChain(list.tokens, catalog);
+  const groups = groupByChain(list.tokens, catalog, enabledChains);
+  const enabledGroups = groups.filter((group) =>
+    enabledChains.includes(group.chain.id),
+  );
+  const disabledGroups = groups.filter(
+    (group) => !enabledChains.includes(group.chain.id),
+  );
+  const disabledTokenCount = disabledGroups.reduce(
+    (total, group) => total + group.tokens.length,
+    0,
+  );
+  const disabledSectionDefaultsCollapsed =
+    disabledGroups.length >= disabledChainSectionCountThreshold ||
+    disabledTokenCount >= disabledChainSectionTokenThreshold;
+  const disabledSectionCollapsed = disabledSectionToggled
+    ? !disabledSectionDefaultsCollapsed
+    : disabledSectionDefaultsCollapsed;
   const expectedVersion = list.metadata.databaseVersion;
   const globalCount = list.tokens.filter((t) => t.scope === "global").length;
 
@@ -297,11 +339,20 @@ export function TokenPage({ tenantId }: AdminPageProps) {
             detail="点击右上角“添加代币”，从链上读取合约信息后加入目录。"
           />
         ) : null}
-        {groups.map((group) => (
+        {enabledGroups.map((group) => (
           <ChainTokenCard
             key={group.chain.id}
             group={group}
             enabled={enabledChains.includes(group.chain.id)}
+            toggled={toggledChains.has(group.chain.id)}
+            onToggleCollapsed={() =>
+              setToggledChains((current) => {
+                const next = new Set(current);
+                if (next.has(group.chain.id)) next.delete(group.chain.id);
+                else next.add(group.chain.id);
+                return next;
+              })
+            }
             onEdit={(token) => {
               setFeedback(null);
               setPanel({ mode: "edit", token });
@@ -310,6 +361,56 @@ export function TokenPage({ tenantId }: AdminPageProps) {
             onDelete={(token) => openRowAction("delete", token)}
           />
         ))}
+        {disabledGroups.length > 0 ? (
+          <section className="token-disabled-chains">
+            <div className="token-disabled-chains-header">
+              <div>
+                <strong>未启用链</strong>
+                <span>
+                  {disabledGroups.length} 条链 · {disabledTokenCount} 个代币
+                </span>
+              </div>
+              <button
+                className="token-chain-toggle"
+                type="button"
+                aria-expanded={!disabledSectionCollapsed}
+                onClick={() => setDisabledSectionToggled((value) => !value)}
+              >
+                {disabledSectionCollapsed ? "展开全部" : "收起全部"}
+                <ChevronDown
+                  size={15}
+                  aria-hidden="true"
+                  className={disabledSectionCollapsed ? "" : "is-open"}
+                />
+              </button>
+            </div>
+            {disabledSectionCollapsed
+              ? null
+              : disabledGroups.map((group) => (
+                  <ChainTokenCard
+                    key={group.chain.id}
+                    group={group}
+                    enabled={false}
+                    toggled={toggledChains.has(group.chain.id)}
+                    onToggleCollapsed={() =>
+                      setToggledChains((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.chain.id))
+                          next.delete(group.chain.id);
+                        else next.add(group.chain.id);
+                        return next;
+                      })
+                    }
+                    onEdit={(token) => {
+                      setFeedback(null);
+                      setPanel({ mode: "edit", token });
+                    }}
+                    onToggle={(token) => openRowAction("toggle", token)}
+                    onDelete={(token) => openRowAction("delete", token)}
+                  />
+                ))}
+          </section>
+        ) : null}
         {list.tokens.length > 0 ? (
           <div className="config-meta">
             <span>
@@ -456,6 +557,8 @@ export function TokenPage({ tenantId }: AdminPageProps) {
 function ChainTokenCard({
   group,
   enabled,
+  toggled,
+  onToggleCollapsed,
   onEdit,
   onToggle,
   onDelete,
@@ -463,11 +566,16 @@ function ChainTokenCard({
   group: ChainGroup;
   /** 这条链是否在钱包配置里启用；没启用的链上的代币不会下发给 App */
   enabled: boolean;
+  toggled: boolean;
+  onToggleCollapsed: () => void;
   onEdit: (token: Token) => void;
   onToggle: (token: Token) => void;
   onDelete: (token: Token) => void;
 }) {
   const { chain, tokens } = group;
+  const defaultCollapsed =
+    !enabled && tokens.length >= disabledChainCollapseThreshold;
+  const collapsed = toggled ? !defaultCollapsed : defaultCollapsed;
   return (
     <Card className="token-chain-card">
       <div className="card-header">
@@ -490,6 +598,22 @@ function ChainTokenCard({
                 链未启用
               </span>
             )}
+            {tokens.length > 0 ? (
+              <button
+                className="token-chain-toggle"
+                type="button"
+                aria-expanded={!collapsed}
+                aria-label={`${collapsed ? "展开" : "收起"} ${chain.name} 代币`}
+                onClick={onToggleCollapsed}
+              >
+                {collapsed ? "展开" : "收起"}
+                <ChevronDown
+                  size={15}
+                  aria-hidden="true"
+                  className={collapsed ? "" : "is-open"}
+                />
+              </button>
+            ) : null}
           </h2>
           <p className="section-caption mono">
             {`chainId ${chain.chainId} · ${chain.id} · 原生币 ${chain.nativeSymbol}（${chain.nativeDecimals} 位） · ${tokens.length} 个代币`}
@@ -499,6 +623,11 @@ function ChainTokenCard({
       {tokens.length === 0 ? (
         <div className="card-body">
           <EmptyState title="这条链还没有代币" />
+        </div>
+      ) : collapsed ? (
+        <div className="token-chain-collapsed-summary">
+          <span>已折叠 {tokens.length} 个代币</span>
+          <span>这条链未在钱包配置中启用，App 当前不会收到这些代币。</span>
         </div>
       ) : (
         <div className="table-wrap">

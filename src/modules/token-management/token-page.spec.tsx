@@ -246,9 +246,12 @@ function preview(overrides: Partial<TokenPreview> = {}): TokenPreview {
   };
 }
 
-function renderPage() {
-  apiMocks.config.mockResolvedValue(configView());
-  apiMocks.listTokens.mockResolvedValue(tokenList());
+function renderPage(
+  config: AppConfig = configView(),
+  list: TokenList = tokenList(),
+) {
+  apiMocks.config.mockResolvedValue(config);
+  apiMocks.listTokens.mockResolvedValue(list);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -318,6 +321,92 @@ describe("TokenPage list", () => {
     // 原生币排最前（sortWeight 最大）
     const rows = screen.getAllByTestId(/token-row-/);
     expect(rows[0]?.getAttribute("data-testid")).toBe("token-row-1");
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      expect.stringContaining("BNB Smart Chain"),
+      expect.stringContaining("Ethereum"),
+      expect.stringContaining("OP Sepolia"),
+    ]);
+    expect(
+      screen
+        .getByRole("button", { name: "收起 BNB Smart Chain 代币" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("puts disabled chains last and collapses a disabled chain with many tokens by default", async () => {
+    const list = tokenList();
+    list.tokens.push(
+      {
+        ...list.tokens[1]!,
+        id: 71,
+        chain: "op-sepolia",
+        address: "0x1111111111111111111111111111111111111111",
+        symbol: "AAA",
+        name: "AAA",
+        enabled: true,
+      },
+      {
+        ...list.tokens[1]!,
+        id: 72,
+        chain: "op-sepolia",
+        address: "0x2222222222222222222222222222222222222222",
+        symbol: "BBB",
+        name: "BBB",
+        enabled: true,
+      },
+    );
+    const config = configView();
+    config.config.wallet.chains = ["bsc"];
+    renderPage(config, list);
+
+    expect(
+      (
+        await screen.findByRole("button", { name: "展开 OP Sepolia 代币" })
+      ).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByTestId("token-row-71")).toBeNull();
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: "展开 OP Sepolia 代币" }),
+    );
+    expect(screen.getByTestId("token-row-71")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "收起 OP Sepolia 代币" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("collapses the whole disabled-chain section when many disabled chains exist", async () => {
+    const config = configView();
+    config.metadata.walletCatalog.push(
+      {
+        ...catalog[1]!,
+        id: "base",
+        name: "Base",
+        chainId: 8453,
+      },
+      {
+        ...catalog[1]!,
+        id: "arb",
+        name: "Arbitrum",
+        chainId: 42161,
+      },
+    );
+    renderPage(config);
+
+    expect(await screen.findByText("4 条链 · 1 个代币")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /Ethereum/ })).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "展开全部" }));
+    expect(screen.getByRole("heading", { name: /Ethereum/ })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "收起全部" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
   });
 
   it("toggles a token with a reason and the list's database version", async () => {
