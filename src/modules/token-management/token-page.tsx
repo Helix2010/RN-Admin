@@ -590,7 +590,14 @@ function ChainTokenCard({
                 测试网
               </span>
             ) : null}
-            {enabled ? null : (
+            {enabled ? (
+              <span
+                className="status-pill status-enabled token-chain-status"
+                title="这条链已在钱包配置中启用，App 会收到它上面的代币"
+              >
+                已启用
+              </span>
+            ) : (
               <span
                 className="status-pill status-draft"
                 title="这条链未在钱包配置里启用，App 不会收到它上面的代币"

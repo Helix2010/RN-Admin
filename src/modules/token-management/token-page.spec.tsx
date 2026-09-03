@@ -291,6 +291,12 @@ describe("TokenPage list", () => {
     expect(screen.getByText("这条链还没有代币")).toBeTruthy();
     const sepolia = screen.getByRole("heading", { name: /OP Sepolia/ });
     expect(within(sepolia).getByText("测试网")).toBeTruthy();
+    expect(
+      within(
+        screen.getByRole("heading", { name: /BNB Smart Chain/ }),
+      ).getByText("已启用"),
+    ).toBeTruthy();
+    expect(within(sepolia).getByText("链未启用")).toBeTruthy();
 
     const usdt = screen.getByTestId("token-row-12");
     expect(within(usdt).getByText("18 位 · 展示 2 位")).toBeTruthy();

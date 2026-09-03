@@ -2810,6 +2810,20 @@ tr:hover td {
   flex-wrap: wrap;
   gap: 8px;
 }
+.token-chain-status {
+  gap: 5px;
+  border: 1px solid var(--success-border);
+  font-weight: 700;
+  box-shadow: 0 3px 10px
+    color-mix(in srgb, var(--success-text) 12%, transparent);
+}
+.token-chain-status::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
 .token-chain-toggle {
   display: inline-flex;
   align-items: center;
