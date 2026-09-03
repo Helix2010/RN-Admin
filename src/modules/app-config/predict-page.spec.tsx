@@ -220,6 +220,89 @@ describe("PredictPlatformPage", () => {
     expect(reason).toBe("接入 dev 平台");
   });
 
+  it("validates per-service endpoint overrides and sends them with the probe and the save", async () => {
+    apiMocks.config.mockResolvedValue(configView());
+    apiMocks.probePredict.mockResolvedValue({
+      ok: true,
+      brand: "prax1s.xyz",
+      chainId: 11155420,
+      chainName: "OP Sepolia",
+      scopeId: SCOPE,
+      problems: [],
+    });
+    apiMocks.saveConfig.mockImplementation(async (_tenant, config) => ({
+      ...configView({ modules: config.modules, services: config.services }),
+      status: "active",
+      savedAt: "2026-09-02T00:00:00Z",
+      actorId: "admin",
+      requestId: "req",
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "编辑配置" }));
+    await user.click(screen.getByLabelText(/开启预测市场模块/));
+    await user.type(
+      screen.getByLabelText(/平台接口域名/),
+      "predict.prax1s.xyz",
+    );
+    await user.type(screen.getByLabelText(/平台 scopeId/), SCOPE);
+    await user.selectOptions(screen.getByLabelText(/^链/), "op-sepolia");
+    // 没填覆盖时显示派生地址
+    expect(
+      screen.getByText("派生：https://clob-api.predict.prax1s.xyz"),
+    ).toBeTruthy();
+
+    // http:// 不行：只收 https://（clob-ws 收 wss://）
+    const clobField = screen.getByLabelText(/clob-api 地址/);
+    await user.type(clobField, "http://clob.example.net");
+    await user.click(screen.getByRole("button", { name: "测试连接" }));
+    expect(screen.getByText(/填完整基址：https/)).toBeTruthy();
+    expect(apiMocks.probePredict).not.toHaveBeenCalled();
+
+    await user.clear(clobField);
+    await user.type(clobField, "https://clob.example.net:8443/api/");
+    await user.type(
+      screen.getByLabelText(/clob-ws 地址/),
+      "wss://ws.example.net",
+    );
+    await user.click(screen.getByRole("button", { name: "测试连接" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("predict-probe-result").textContent).toContain(
+        "连接正常",
+      ),
+    );
+    // 末尾 / 去掉；没填的服务不出现在 endpoints 里
+    expect(apiMocks.probePredict).toHaveBeenCalledWith({
+      domain: "predict.prax1s.xyz",
+      scopeId: SCOPE,
+      chain: "op-sepolia",
+      endpoints: {
+        clob: "https://clob.example.net:8443/api",
+        clobWs: "wss://ws.example.net",
+      },
+    });
+
+    await user.click(screen.getByRole("button", { name: "保存并激活" }));
+    await user.type(screen.getByLabelText(/修改原因/), "clob 单独部署");
+    await user.click(screen.getByRole("button", { name: "继续" }));
+    expect(screen.getByText(/自定义服务地址：2 项/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "确认激活" }));
+    await waitFor(() => expect(apiMocks.saveConfig).toHaveBeenCalledTimes(1));
+    const [, saved] = apiMocks.saveConfig.mock.calls[0]!;
+    expect(saved.services.predict?.endpoints).toEqual({
+      clob: "https://clob.example.net:8443/api",
+      clobWs: "wss://ws.example.net",
+    });
+    // 保存后的概览标出哪些是自定义、哪些是派生
+    const overview = await screen.findByTestId("predict-overview");
+    expect(overview.textContent).toContain(
+      "clob-api：https://clob.example.net:8443/api（自定义）",
+    );
+    expect(overview.textContent).toContain(
+      "gamma-api：https://gamma-api.predict.prax1s.xyz（派生）",
+    );
+  });
+
   it("invalidates the probe when a field changes afterwards", async () => {
     apiMocks.config.mockResolvedValue(
       configView({

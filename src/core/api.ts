@@ -340,6 +340,20 @@ export type TokenUpdateInput = {
   expectedVersion: number;
 };
 
+/** 服务基址：https://（clob-ws 用 wss://）+ 主机[:端口][/路径]，不带查询串与 #，不以 / 结尾 */
+export const httpsBasePattern =
+  /^https:\/\/[a-z0-9.-]+(:\d{2,5})?(\/[A-Za-z0-9._~%/-]*[A-Za-z0-9._~%-])?$/;
+export const wssBasePattern =
+  /^wss:\/\/[a-z0-9.-]+(:\d{2,5})?(\/[A-Za-z0-9._~%/-]*[A-Za-z0-9._~%-])?$/;
+/** 逐服务的地址覆盖；缺的项 App 按平台接口域名派生 */
+export const predictEndpointsSchema = z.object({
+  gamma: z.string().regex(httpsBasePattern).optional(),
+  clob: z.string().regex(httpsBasePattern).optional(),
+  clobWs: z.string().regex(wssBasePattern).optional(),
+  data: z.string().regex(httpsBasePattern).optional(),
+  relayer: z.string().regex(httpsBasePattern).optional(),
+  faucet: z.string().regex(httpsBasePattern).optional(),
+});
 export const predictServiceSchema = z.object({
   domain: z.string().trim().min(1),
   scopeId: z
@@ -347,6 +361,7 @@ export const predictServiceSchema = z.object({
     .trim()
     .regex(/^0x[0-9a-f]{64}$/),
   chain: z.string().trim().min(1),
+  endpoints: predictEndpointsSchema.optional(),
 });
 const servicesSectionSchema = z.object({
   predict: predictServiceSchema.optional(),
@@ -419,6 +434,7 @@ export const managedAppConfigSchema = z.looseObject({
 });
 export type ManagedAppConfig = z.infer<typeof managedAppConfigSchema>;
 export type PredictService = z.infer<typeof predictServiceSchema>;
+export type PredictEndpoints = z.infer<typeof predictEndpointsSchema>;
 export type PredictProbe = z.infer<typeof predictProbeSchema>;
 export type WalletSection = z.infer<typeof walletSectionSchema>;
 export type WalletCatalogEntry = z.infer<typeof walletCatalogEntrySchema>;

@@ -3,7 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Edit3, PlugZap, Save, X } from "lucide-react";
 import {
   adminApi,
+  httpsBasePattern,
+  wssBasePattern,
   type AppConfig,
+  type PredictEndpoints,
   type PredictProbe,
   type PredictService,
 } from "../../core/api";
@@ -34,11 +37,35 @@ const hostnamePattern =
   /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 const scopeIdPattern = /^0x[0-9a-f]{64}$/;
 
+type EndpointKey = keyof PredictEndpoints;
+
+/**
+ * 六个服务：没填覆盖地址时 App 按 `{子域}.{平台接口域名}` 派生（同平台前端 serviceUrls.ts）。
+ * 平台部署方把某个服务放到别的主机 / 端口时，在这里逐项填完整基址。
+ */
+const ENDPOINTS: { key: EndpointKey; subdomain: string; ws: boolean }[] = [
+  { key: "gamma", subdomain: "gamma-api", ws: false },
+  { key: "clob", subdomain: "clob-api", ws: false },
+  { key: "clobWs", subdomain: "clob-ws", ws: true },
+  { key: "data", subdomain: "data-api", ws: false },
+  { key: "relayer", subdomain: "relayer", ws: false },
+  { key: "faucet", subdomain: "faucet", ws: false },
+];
+
+function derivedEndpoint(
+  domain: string,
+  entry: (typeof ENDPOINTS)[number],
+): string {
+  return `${entry.ws ? "wss" : "https"}://${entry.subdomain}.${domain}`;
+}
+
 type PredictDraft = {
   enabled: boolean;
   domain: string;
   scopeId: string;
   chain: string;
+  /** 每个服务的覆盖地址，空串 = 按规则派生 */
+  endpoints: Record<EndpointKey, string>;
 };
 
 function draftFrom(view: AppConfig): PredictDraft {
@@ -48,19 +75,40 @@ function draftFrom(view: AppConfig): PredictDraft {
     domain: predict?.domain ?? "",
     scopeId: predict?.scopeId ?? "",
     chain: predict?.chain ?? "",
+    endpoints: Object.fromEntries(
+      ENDPOINTS.map((entry) => [
+        entry.key,
+        predict?.endpoints?.[entry.key] ?? "",
+      ]),
+    ) as Record<EndpointKey, string>,
   };
 }
 
-/** 测试连接的结果只对当时的三个值有效：改了任何一个就要重新测。 */
+/** 填了的覆盖地址（去掉首尾空白与末尾 /）；一项都没填就是 undefined，不往配置里写空对象 */
+function endpointsFrom(draft: PredictDraft): PredictEndpoints | undefined {
+  const entries = ENDPOINTS.flatMap((entry) => {
+    const value = draft.endpoints[entry.key].trim().replace(/\/+$/, "");
+    return value === "" ? [] : [[entry.key, value] as const];
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+/** 测试连接的结果只对当时发出去的那组值有效：改了任何一项（含服务地址，gamma 地址决定 public-info 从哪读）就要重新测。 */
+function probeKeyOf(service: PredictService): string {
+  return `${service.domain}|${service.scopeId}|${service.chain}|${JSON.stringify(service.endpoints ?? {})}`;
+}
+
 function probeKey(draft: PredictDraft): string {
-  return `${draft.domain.trim().toLowerCase()}|${draft.scopeId.trim().toLowerCase()}|${draft.chain}`;
+  return probeKeyOf(serviceFrom(draft));
 }
 
 function serviceFrom(draft: PredictDraft): PredictService {
+  const endpoints = endpointsFrom(draft);
   return {
     domain: draft.domain.trim().toLowerCase(),
     scopeId: draft.scopeId.trim().toLowerCase(),
     chain: draft.chain,
+    ...(endpoints ? { endpoints } : {}),
   };
 }
 
@@ -68,7 +116,8 @@ function hasAnyValue(draft: PredictDraft): boolean {
   return (
     draft.domain.trim() !== "" ||
     draft.scopeId.trim() !== "" ||
-    draft.chain !== ""
+    draft.chain !== "" ||
+    ENDPOINTS.some((entry) => draft.endpoints[entry.key].trim() !== "")
   );
 }
 
@@ -100,6 +149,19 @@ function predictProblems(
       message: "必须选一条本租户已启用的链，并与平台上这个租户所在的链一致。",
       targetId: "predict-chain",
     });
+  for (const entry of ENDPOINTS) {
+    const value = draft.endpoints[entry.key].trim().replace(/\/+$/, "");
+    if (value === "") continue;
+    const pattern = entry.ws ? wssBasePattern : httpsBasePattern;
+    if (!pattern.test(value))
+      problems.push({
+        field: `${entry.subdomain} 地址`,
+        message: entry.ws
+          ? "填完整基址：wss://主机[:端口][/路径]，不带查询串与 #。留空则按域名派生。"
+          : "填完整基址：https://主机[:端口][/路径]，不带查询串与 #。留空则按域名派生。",
+        targetId: `predict-endpoint-${entry.key}`,
+      });
+  }
   if (problems.length === 0 && probeOkFor !== probeKey(draft))
     problems.push({
       field: "测试连接",
@@ -137,10 +199,7 @@ export function PredictPlatformPage({ tenantId }: AdminPageProps) {
     mutationFn: (service: PredictService) => adminApi.probePredict(service),
     onSuccess: (result, service) => {
       setProbeError("");
-      setProbe({
-        key: `${service.domain}|${service.scopeId}|${service.chain}`,
-        result,
-      });
+      setProbe({ key: probeKeyOf(service), result });
     },
     onError: (error) => {
       setProbe(null);
@@ -410,6 +469,54 @@ export function PredictPlatformPage({ tenantId }: AdminPageProps) {
                 </option>
               ))}
             </SelectField>
+            <div className="form-field">
+              <span>服务地址（可选覆盖）</span>
+              <small>
+                留空按规则从上面的域名派生；平台部署方把某个服务放在别的主机或端口时才填。
+                填完整基址，https://（clob-ws 用 wss://），不带查询串，不以 /
+                结尾。
+              </small>
+            </div>
+            {ENDPOINTS.map((entry) => {
+              const domain = draft.domain.trim().toLowerCase();
+              const derived = hostnamePattern.test(domain)
+                ? derivedEndpoint(domain, entry)
+                : "";
+              const value = draft.endpoints[entry.key];
+              return (
+                <label className="form-field" key={entry.key}>
+                  <span>
+                    {entry.subdomain} 地址
+                    <small className="mono"> endpoints.{entry.key}</small>
+                  </span>
+                  <input
+                    id={`predict-endpoint-${entry.key}`}
+                    className="input mono"
+                    value={value}
+                    placeholder={derived || `${entry.ws ? "wss" : "https"}://…`}
+                    aria-invalid={problems.some(
+                      (item) =>
+                        item.targetId === `predict-endpoint-${entry.key}`,
+                    )}
+                    onChange={(event) =>
+                      updateDraft((next) => {
+                        next.endpoints = {
+                          ...next.endpoints,
+                          [entry.key]: event.target.value,
+                        };
+                      })
+                    }
+                  />
+                  <small>
+                    {value.trim() !== ""
+                      ? "自定义地址，保存后 App 直接用它"
+                      : derived
+                        ? `派生：${derived}`
+                        : "先填上面的域名，这里会显示派生地址"}
+                  </small>
+                </label>
+              );
+            })}
             <div className="form-actions">
               <Button
                 id="predict-probe"
@@ -507,6 +614,17 @@ export function PredictPlatformPage({ tenantId }: AdminPageProps) {
               平台 scopeId：{current?.scopeId ?? "未配置"}
             </span>
             <span>链：{current ? chainName(current.chain) : "未配置"}</span>
+            {current &&
+              ENDPOINTS.map((entry) => {
+                const custom = current.endpoints?.[entry.key];
+                return (
+                  <span className="mono" key={entry.key}>
+                    {entry.subdomain}：
+                    {custom ?? derivedEndpoint(current.domain, entry)}
+                    {custom ? "（自定义）" : "（派生）"}
+                  </span>
+                );
+              })}
             {data.config.modules.predict && !current && (
               <span className="error">
                 模块已开启但没有平台关联：服务端不会下发
@@ -531,6 +649,10 @@ export function PredictPlatformPage({ tenantId }: AdminPageProps) {
           <span>模块：{draft?.enabled ? "开启" : "关闭"}</span>
           <span>域名：{draft?.domain.trim() || "-"}</span>
           <span>链：{draft ? chainName(draft.chain) : "-"}</span>
+          <span>
+            自定义服务地址：
+            {draft ? Object.keys(endpointsFrom(draft) ?? {}).length : 0} 项
+          </span>
         </div>
       </ConfirmDialog>
     </>
